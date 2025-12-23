@@ -1,10 +1,12 @@
-import { useState } from 'react';
-import { Phone, Navigation, AlertTriangle, CheckCircle, MapPin } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Phone, Navigation, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useDirections } from '@/hooks/useDirections';
+import NavigationInstructions from './NavigationInstructions';
 
 interface Rider {
   name: string;
@@ -19,8 +21,14 @@ interface ActiveRideViewProps {
   otp: string | null;
   pickupAddress: string;
   dropAddress: string;
+  pickupLat: number;
+  pickupLng: number;
+  dropLat: number;
+  dropLng: number;
   fare: number;
+  captainLocation: { lat: number; lng: number } | null;
   onStatusUpdate: (status: string) => void;
+  onRouteUpdate?: (decodedPath: Array<{ lat: number; lng: number }>) => void;
 }
 
 const statusFlow = [
@@ -37,14 +45,45 @@ const ActiveRideView = ({
   otp,
   pickupAddress,
   dropAddress,
+  pickupLat,
+  pickupLng,
+  dropLat,
+  dropLng,
   fare,
+  captainLocation,
   onStatusUpdate,
+  onRouteUpdate,
 }: ActiveRideViewProps) => {
   const [enteredOtp, setEnteredOtp] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
   const { toast } = useToast();
+  const { routeInfo, fetchDirections } = useDirections();
 
   const currentStep = statusFlow.find((s) => s.status === status);
+
+  // Determine navigation destination based on status
+  const isGoingToPickup = status === 'matched' || status === 'captain_arriving' || status === 'waiting_for_rider';
+  const destination = isGoingToPickup 
+    ? { lat: pickupLat, lng: pickupLng, address: pickupAddress }
+    : { lat: dropLat, lng: dropLng, address: dropAddress };
+
+  // Fetch directions when status changes or captain moves significantly
+  useEffect(() => {
+    if (!captainLocation) return;
+
+    const fetchRoute = async () => {
+      await fetchDirections(captainLocation, { lat: destination.lat, lng: destination.lng });
+    };
+
+    fetchRoute();
+  }, [status, captainLocation?.lat, captainLocation?.lng, destination.lat, destination.lng]);
+
+  // Notify parent of route updates for map display
+  useEffect(() => {
+    if (routeInfo?.decodedPath && onRouteUpdate) {
+      onRouteUpdate(routeInfo.decodedPath);
+    }
+  }, [routeInfo?.decodedPath, onRouteUpdate]);
 
   const handleUpdateStatus = async () => {
     if (!currentStep) return;
@@ -110,6 +149,18 @@ const ActiveRideView = ({
 
   return (
     <div className="bg-card rounded-2xl shadow-lg border border-border overflow-hidden">
+      {/* Navigation Instructions */}
+      {routeInfo && routeInfo.steps.length > 0 && (
+        <div className="mb-2">
+          <NavigationInstructions
+            steps={routeInfo.steps}
+            totalDistance={routeInfo.distance.text}
+            totalDuration={routeInfo.duration.text}
+            destination={isGoingToPickup ? 'Pickup' : 'Drop-off'}
+          />
+        </div>
+      )}
+
       {/* Status Header */}
       <div className="px-4 py-3 bg-primary text-primary-foreground">
         <p className="font-semibold text-center">

@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Menu, Bell, Power } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Menu, Power } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import GoogleMapView from '@/components/maps/GoogleMapView';
@@ -21,7 +21,8 @@ const CaptainHome = ({ captain }: CaptainHomeProps) => {
   const [pendingRequest, setPendingRequest] = useState<any>(null);
   const [activeRide, setActiveRide] = useState<any>(null);
   const [riderInfo, setRiderInfo] = useState<any>(null);
-  const { user, profile } = useAuth();
+  const [routePath, setRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
+  const { profile } = useAuth();
   const { toast } = useToast();
 
   // Real-time ride notifications
@@ -124,6 +125,7 @@ const CaptainHome = ({ captain }: CaptainHomeProps) => {
             } else if (newRide.status === 'completed' || newRide.status === 'cancelled') {
               setActiveRide(null);
               setRiderInfo(null);
+              setRoutePath([]);
             }
           }
         }
@@ -136,7 +138,6 @@ const CaptainHome = ({ captain }: CaptainHomeProps) => {
   }, [captain?.id]);
 
   const handleAcceptRequest = () => {
-    // In production, this would be handled by the match-captain function
     setPendingRequest(null);
     toast({ title: 'Ride accepted!' });
   };
@@ -152,9 +153,30 @@ const CaptainHome = ({ captain }: CaptainHomeProps) => {
         setTimeout(() => {
           setActiveRide(null);
           setRiderInfo(null);
+          setRoutePath([]);
         }, 2000);
       }
     }
+  };
+
+  const handleRouteUpdate = useCallback((decodedPath: Array<{ lat: number; lng: number }>) => {
+    setRoutePath(decodedPath);
+  }, []);
+
+  // Build markers for active ride
+  const buildMarkers = (): Array<{ lat: number; lng: number; title: string; icon: 'pickup' | 'drop' | 'dropoff' | 'captain' | 'default' }> => {
+    const markers: Array<{ lat: number; lng: number; title: string; icon: 'pickup' | 'drop' | 'dropoff' | 'captain' | 'default' }> = [
+      { lat: currentLocation.lat, lng: currentLocation.lng, title: 'You', icon: 'captain' }
+    ];
+
+    if (activeRide) {
+      markers.push(
+        { lat: activeRide.pickup_lat, lng: activeRide.pickup_lng, title: 'Pickup', icon: 'pickup' },
+        { lat: activeRide.drop_lat, lng: activeRide.drop_lng, title: 'Drop-off', icon: 'dropoff' }
+      );
+    }
+
+    return markers;
   };
 
   return (
@@ -206,7 +228,8 @@ const CaptainHome = ({ captain }: CaptainHomeProps) => {
         <GoogleMapView
           center={currentLocation}
           zoom={16}
-          markers={[{ lat: currentLocation.lat, lng: currentLocation.lng, title: 'You' }]}
+          markers={buildMarkers()}
+          polylinePath={routePath}
           className="h-full"
         />
 
@@ -234,8 +257,14 @@ const CaptainHome = ({ captain }: CaptainHomeProps) => {
               otp={activeRide.otp}
               pickupAddress={activeRide.pickup_address}
               dropAddress={activeRide.drop_address}
+              pickupLat={activeRide.pickup_lat}
+              pickupLng={activeRide.pickup_lng}
+              dropLat={activeRide.drop_lat}
+              dropLng={activeRide.drop_lng}
               fare={activeRide.final_fare || 0}
+              captainLocation={currentLocation}
               onStatusUpdate={handleStatusUpdate}
+              onRouteUpdate={handleRouteUpdate}
             />
           </div>
         )}

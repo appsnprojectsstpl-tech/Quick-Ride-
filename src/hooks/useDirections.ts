@@ -1,6 +1,21 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
+interface NavigationStep {
+  instruction: string;
+  distance: {
+    text: string;
+    value: number;
+  };
+  duration: {
+    text: string;
+    value: number;
+  };
+  maneuver: string;
+  startLocation: { lat: number; lng: number };
+  endLocation: { lat: number; lng: number };
+}
+
 interface RouteInfo {
   polyline: string;
   distance: {
@@ -12,6 +27,7 @@ interface RouteInfo {
     value: number;
   };
   decodedPath: Array<{ lat: number; lng: number }>;
+  steps: NavigationStep[];
 }
 
 interface UseDirectionsResult {
@@ -92,11 +108,22 @@ export const useDirections = (): UseDirectionsResult => {
 
         const decodedPath = decodePolyline(data.polyline);
 
+        // Parse steps from the response
+        const steps: NavigationStep[] = (data.steps || []).map((step: any) => ({
+          instruction: step.instruction?.replace(/<[^>]*>/g, '') || '',
+          distance: step.distance || { text: '', value: 0 },
+          duration: step.duration || { text: '', value: 0 },
+          maneuver: step.maneuver || 'straight',
+          startLocation: step.start_location || { lat: 0, lng: 0 },
+          endLocation: step.end_location || { lat: 0, lng: 0 },
+        }));
+
         setRouteInfo({
           polyline: data.polyline,
           distance: data.distance,
           duration: data.duration,
           decodedPath,
+          steps,
         });
       } catch (err: unknown) {
         const errorMessage = err instanceof Error ? err.message : 'Failed to fetch directions';
