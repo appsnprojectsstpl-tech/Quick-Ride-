@@ -33,11 +33,12 @@ const AdminSidebar = () => {
   };
 
   return (
-    <aside className="fixed left-0 top-0 bottom-0 w-64 bg-sidebar-background text-sidebar-foreground flex flex-col">
+    <aside className="fixed left-0 top-0 bottom-0 w-64 bg-sidebar text-sidebar-foreground flex flex-col">
       {/* Logo */}
       <div className="p-6 border-b border-sidebar-border">
-        <h1 className="text-xl font-display font-bold">
-          <span className="text-sidebar-primary">Quick</span> <span className="text-sidebar-foreground">Ride</span>
+        <h1 className="text-2xl font-display font-bold flex items-center gap-1">
+          <span className="text-sidebar-primary">Quick</span>
+          <span className="text-sidebar-foreground">Ride</span>
         </h1>
         <p className="text-xs text-sidebar-foreground/60 mt-1">Admin Dashboard</p>
       </div>
