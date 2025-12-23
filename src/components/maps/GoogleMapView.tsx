@@ -7,7 +7,7 @@ interface MapMarker {
   lat: number;
   lng: number;
   title?: string;
-  icon?: 'pickup' | 'drop' | 'captain' | 'default';
+  icon?: 'pickup' | 'drop' | 'dropoff' | 'captain' | 'default';
 }
 
 interface GoogleMapViewProps {
@@ -164,7 +164,7 @@ const GoogleMapView = ({
               ? 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png'
               : marker.icon === 'pickup'
               ? 'https://maps.google.com/mapfiles/ms/icons/green-dot.png'
-              : marker.icon === 'drop'
+              : marker.icon === 'drop' || marker.icon === 'dropoff'
               ? 'https://maps.google.com/mapfiles/ms/icons/red-dot.png'
               : undefined;
 
