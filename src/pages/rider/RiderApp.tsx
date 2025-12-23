@@ -1,10 +1,38 @@
+import { useState, useEffect } from 'react';
+import { Routes, Route, useNavigate } from 'react-router-dom';
+import { useAuth } from '@/hooks/useAuth';
+import RiderHome from './RiderHome';
+import RiderHistory from './RiderHistory';
+import RiderProfile from './RiderProfile';
+import RiderNavBar from '@/components/rider/RiderNavBar';
+import { Loader2 } from 'lucide-react';
+
 const RiderApp = () => {
-  return (
-    <div className="min-h-screen bg-background flex items-center justify-center">
-      <div className="text-center">
-        <h1 className="text-2xl font-display font-bold mb-2">Rider App</h1>
-        <p className="text-muted-foreground">Coming soon - Book your rides here</p>
+  const { user, role, isLoading } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!isLoading && !user) {
+      navigate('/auth');
+    }
+  }, [user, isLoading, navigate]);
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
+    );
+  }
+
+  return (
+    <div className="mobile-layout pb-20">
+      <Routes>
+        <Route path="/" element={<RiderHome />} />
+        <Route path="/history" element={<RiderHistory />} />
+        <Route path="/profile" element={<RiderProfile />} />
+      </Routes>
+      <RiderNavBar />
     </div>
   );
 };
