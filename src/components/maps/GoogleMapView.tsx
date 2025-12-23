@@ -2,10 +2,17 @@ import { GoogleMap, LoadScript, Marker } from '@react-google-maps/api';
 import { useGoogleMapsApiKey } from '@/hooks/useGoogleMaps';
 import { Skeleton } from '@/components/ui/skeleton';
 
+interface MapMarker {
+  lat: number;
+  lng: number;
+  title?: string;
+  icon?: 'pickup' | 'drop' | 'captain' | 'default';
+}
+
 interface GoogleMapViewProps {
   center?: { lat: number; lng: number };
   zoom?: number;
-  markers?: Array<{ lat: number; lng: number; title?: string }>;
+  markers?: MapMarker[];
   onMapClick?: (lat: number, lng: number) => void;
   className?: string;
 }
@@ -73,13 +80,24 @@ const GoogleMapView = ({
             }
           }}
         >
-          {markers.map((marker, index) => (
-            <Marker
-              key={index}
-              position={{ lat: marker.lat, lng: marker.lng }}
-              title={marker.title}
-            />
-          ))}
+          {markers.map((marker, index) => {
+            const iconUrl = marker.icon === 'captain' 
+              ? 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png'
+              : marker.icon === 'pickup'
+              ? 'https://maps.google.com/mapfiles/ms/icons/green-dot.png'
+              : marker.icon === 'drop'
+              ? 'https://maps.google.com/mapfiles/ms/icons/red-dot.png'
+              : undefined;
+
+            return (
+              <Marker
+                key={index}
+                position={{ lat: marker.lat, lng: marker.lng }}
+                title={marker.title}
+                icon={iconUrl}
+              />
+            );
+          })}
         </GoogleMap>
       </LoadScript>
     </div>
