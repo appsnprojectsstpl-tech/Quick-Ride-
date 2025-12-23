@@ -57,7 +57,10 @@ const ActiveRideView = ({
   const [enteredOtp, setEnteredOtp] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
   const { toast } = useToast();
-  const { routeInfo, fetchDirections } = useDirections();
+  const { routeInfo, fetchDirections, lastUpdated } = useDirections({ 
+    autoRefreshInterval: 30000, // Refresh every 30 seconds
+    enabled: true 
+  });
 
   const currentStep = statusFlow.find((s) => s.status === status);
 
@@ -156,7 +159,10 @@ const ActiveRideView = ({
             steps={routeInfo.steps}
             totalDistance={routeInfo.distance.text}
             totalDuration={routeInfo.duration.text}
+            durationInTraffic={routeInfo.durationInTraffic?.text}
+            eta={routeInfo.eta}
             destination={isGoingToPickup ? 'Pickup' : 'Drop-off'}
+            lastUpdated={lastUpdated}
           />
         </div>
       )}

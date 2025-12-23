@@ -35,7 +35,10 @@ interface NavigationInstructionsProps {
   steps: NavigationStep[];
   totalDistance: string;
   totalDuration: string;
+  durationInTraffic?: string;
+  eta?: string;
   destination: string;
+  lastUpdated?: Date | null;
 }
 
 const getManeuverIcon = (maneuver: string) => {
@@ -73,7 +76,10 @@ const NavigationInstructions = ({
   steps,
   totalDistance,
   totalDuration,
+  durationInTraffic,
+  eta,
   destination,
+  lastUpdated,
 }: NavigationInstructionsProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -83,9 +89,33 @@ const NavigationInstructions = ({
 
   const currentStep = steps[0];
   const upcomingSteps = steps.slice(1);
+  
+  // Format ETA time
+  const formatEta = (etaString?: string) => {
+    if (!etaString) return null;
+    const etaDate = new Date(etaString);
+    return etaDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const formattedEta = formatEta(eta);
+  const displayDuration = durationInTraffic || totalDuration;
 
   return (
     <div className="bg-card rounded-xl border border-border shadow-lg overflow-hidden">
+      {/* ETA Banner */}
+      {formattedEta && (
+        <div className="bg-success/10 border-b border-success/20 px-4 py-2 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
+            <span className="text-sm font-medium text-success">Live ETA</span>
+          </div>
+          <div className="text-right">
+            <span className="text-lg font-bold">{formattedEta}</span>
+            <span className="text-xs text-muted-foreground ml-2">({displayDuration})</span>
+          </div>
+        </div>
+      )}
+
       {/* Current Step - Always Visible */}
       <div className="bg-primary text-primary-foreground p-4">
         <div className="flex items-center gap-4">
@@ -109,8 +139,13 @@ const NavigationInstructions = ({
         <div className="flex items-center gap-2">
           <Navigation className="w-4 h-4 text-primary" />
           <span className="text-sm font-medium">
-            {totalDistance} · {totalDuration} to {destination}
+            {totalDistance} to {destination}
           </span>
+          {lastUpdated && (
+            <span className="text-xs text-muted-foreground">
+              · Updated {Math.round((Date.now() - lastUpdated.getTime()) / 1000)}s ago
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-1 text-muted-foreground">
           <span className="text-xs">{upcomingSteps.length} steps</span>

@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Phone, MessageCircle, Navigation, AlertTriangle, Share2, X } from 'lucide-react';
+import { Phone, Share2, X, AlertTriangle, Clock, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useCaptainTracking } from '@/hooks/useCaptainTracking';
+import { useDirections } from '@/hooks/useDirections';
 
 interface Captain {
+  id: string;
   name: string;
   phone: string;
   avatar_url: string | null;
@@ -24,6 +26,10 @@ interface ActiveRideCardProps {
   status: string;
   captain: Captain | null;
   otp: string | null;
+  pickupLat?: number;
+  pickupLng?: number;
+  dropLat?: number;
+  dropLng?: number;
   onCancel: () => void;
   onSOS: () => void;
 }
@@ -36,18 +42,59 @@ const statusLabels: Record<string, { label: string; color: string }> = {
   in_progress: { label: 'On Trip', color: 'bg-success text-success-foreground' },
 };
 
-const ActiveRideCard = ({ rideId, status, captain, otp, onCancel, onSOS }: ActiveRideCardProps) => {
-  const [eta, setEta] = useState(captain?.eta_mins || 0);
+const ActiveRideCard = ({ 
+  rideId, 
+  status, 
+  captain, 
+  otp, 
+  pickupLat,
+  pickupLng,
+  dropLat,
+  dropLng,
+  onCancel, 
+  onSOS 
+}: ActiveRideCardProps) => {
   const { toast } = useToast();
+  
+  // Track captain's real-time location
+  const { captainLocation } = useCaptainTracking({
+    captainId: captain?.id || '',
+    enabled: !!captain?.id && ['matched', 'captain_arriving', 'in_progress'].includes(status),
+  });
 
+  // Get real-time directions with traffic
+  const { routeInfo, fetchDirections, lastUpdated } = useDirections({
+    autoRefreshInterval: 30000, // Refresh every 30 seconds
+    enabled: !!captainLocation && ['matched', 'captain_arriving', 'in_progress'].includes(status),
+  });
+
+  // Fetch directions when captain location updates
   useEffect(() => {
-    if (status === 'captain_arriving' && eta > 0) {
-      const interval = setInterval(() => {
-        setEta((prev) => Math.max(0, prev - 1));
-      }, 60000);
-      return () => clearInterval(interval);
+    if (!captainLocation) return;
+
+    // Determine destination based on status
+    const isGoingToPickup = ['matched', 'captain_arriving', 'waiting_for_rider'].includes(status);
+    const destination = isGoingToPickup
+      ? { lat: pickupLat || 0, lng: pickupLng || 0 }
+      : { lat: dropLat || 0, lng: dropLng || 0 };
+
+    if (destination.lat && destination.lng) {
+      fetchDirections(
+        { lat: captainLocation.lat, lng: captainLocation.lng },
+        destination
+      );
     }
-  }, [status, eta]);
+  }, [captainLocation?.lat, captainLocation?.lng, status, pickupLat, pickupLng, dropLat, dropLng]);
+
+  // Format ETA time
+  const formatEta = (etaString?: string) => {
+    if (!etaString) return null;
+    const etaDate = new Date(etaString);
+    return etaDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const liveEta = routeInfo?.eta ? formatEta(routeInfo.eta) : null;
+  const liveDuration = routeInfo?.durationInTraffic?.text || routeInfo?.duration?.text;
 
   const handleCall = () => {
     if (captain?.phone) {
@@ -79,11 +126,41 @@ const ActiveRideCard = ({ rideId, status, captain, otp, onCancel, onSOS }: Activ
       <div className={`px-4 py-3 ${statusLabels[status]?.color || 'bg-muted'}`}>
         <div className="flex items-center justify-between">
           <span className="font-semibold">{statusLabels[status]?.label || status}</span>
-          {status === 'captain_arriving' && eta > 0 && (
-            <span className="text-sm">ETA: {eta} mins</span>
+          {liveEta && ['captain_arriving', 'in_progress'].includes(status) && (
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-current animate-pulse" />
+              <span className="text-sm font-medium">ETA: {liveEta}</span>
+            </div>
           )}
         </div>
       </div>
+
+      {/* Live ETA Banner */}
+      {liveDuration && ['captain_arriving', 'in_progress'].includes(status) && (
+        <div className="bg-success/10 border-b border-success/20 px-4 py-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-success" />
+              <span className="text-sm text-success font-medium">Live Traffic Update</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="text-right">
+                <span className="font-bold">{liveDuration}</span>
+                {routeInfo?.distance && (
+                  <span className="text-xs text-muted-foreground ml-2">
+                    ({routeInfo.distance.text})
+                  </span>
+                )}
+              </div>
+              {lastUpdated && (
+                <span className="text-xs text-muted-foreground">
+                  {Math.round((Date.now() - lastUpdated.getTime()) / 1000)}s ago
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* OTP Display */}
       {otp && status !== 'in_progress' && (

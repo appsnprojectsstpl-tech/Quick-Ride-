@@ -30,6 +30,8 @@ serve(async (req) => {
     url.searchParams.append('origin', `${origin.lat},${origin.lng}`);
     url.searchParams.append('destination', `${destination.lat},${destination.lng}`);
     url.searchParams.append('mode', 'driving');
+    url.searchParams.append('departure_time', 'now'); // Enable real-time traffic
+    url.searchParams.append('traffic_model', 'best_guess'); // Traffic prediction model
     url.searchParams.append('key', apiKey);
 
     const response = await fetch(url.toString());
@@ -46,6 +48,9 @@ serve(async (req) => {
     const route = data.routes[0];
     const leg = route.legs[0];
 
+    // Use duration_in_traffic if available (requires departure_time parameter)
+    const durationInTraffic = leg.duration_in_traffic || leg.duration;
+
     const result = {
       polyline: route.overview_polyline.points,
       distance: {
@@ -54,8 +59,13 @@ serve(async (req) => {
       },
       duration: {
         text: leg.duration.text,
-        value: leg.duration.value, // seconds
+        value: leg.duration.value, // seconds (without traffic)
       },
+      duration_in_traffic: {
+        text: durationInTraffic.text,
+        value: durationInTraffic.value, // seconds (with traffic)
+      },
+      eta: new Date(Date.now() + durationInTraffic.value * 1000).toISOString(),
       steps: leg.steps.map((step: any) => ({
         instruction: step.html_instructions,
         distance: {
@@ -78,7 +88,12 @@ serve(async (req) => {
       })),
     };
 
-    console.log('Directions fetched successfully:', result.distance.text, result.duration.text);
+    console.log('Directions fetched successfully:', result.distance.text, 'ETA:', result.duration_in_traffic.text);
+
+    return new Response(
+      JSON.stringify(result),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
 
     return new Response(
       JSON.stringify(result),
