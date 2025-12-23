@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Menu, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import GoogleMapView from '@/components/maps/GoogleMapView';
@@ -9,6 +9,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { useRideNotifications } from '@/hooks/useRideNotifications';
+import { useCaptainTracking } from '@/hooks/useCaptainTracking';
 import { Database } from '@/integrations/supabase/types';
 
 type RideStatus = Database['public']['Enums']['ride_status'];
@@ -23,6 +24,7 @@ interface ActiveRide {
   id: string;
   status: RideStatus;
   otp: string | null;
+  captainId: string | null;
   captain: {
     name: string;
     phone: string;
@@ -55,6 +57,15 @@ const RiderHome = () => {
     onStatusChange: (status) => {
       console.log('Ride status changed:', status);
     },
+  });
+
+  // Track captain location during active ride
+  const shouldTrackCaptain = activeRide?.status && 
+    ['matched', 'captain_arriving', 'waiting_for_rider', 'in_progress'].includes(activeRide.status);
+  
+  const { captainLocation, isTracking } = useCaptainTracking({
+    captainId: activeRide?.captainId || null,
+    enabled: !!shouldTrackCaptain,
   });
 
   // Get current location
@@ -117,6 +128,7 @@ const RiderHome = () => {
           id: ride.id,
           status: ride.status,
           otp: ride.otp,
+          captainId: (ride.captains as any)?.id || null,
           captain: captainData,
           pickup: { lat: ride.pickup_lat, lng: ride.pickup_lng, address: ride.pickup_address },
           drop: { lat: ride.drop_lat, lng: ride.drop_lng, address: ride.drop_address },
@@ -205,9 +217,53 @@ const RiderHome = () => {
     }
   };
 
-  const mapMarkers = [];
-  if (pickup) mapMarkers.push({ lat: pickup.lat, lng: pickup.lng, title: 'Pickup' });
-  if (drop) mapMarkers.push({ lat: drop.lat, lng: drop.lng, title: 'Drop' });
+  // Build map markers with captain location
+  const mapMarkers = useMemo(() => {
+    const markers = [];
+    
+    if (activeRide) {
+      // Show pickup and drop for active ride
+      markers.push({ 
+        lat: activeRide.pickup.lat, 
+        lng: activeRide.pickup.lng, 
+        title: 'Pickup', 
+        icon: 'pickup' as const 
+      });
+      markers.push({ 
+        lat: activeRide.drop.lat, 
+        lng: activeRide.drop.lng, 
+        title: 'Drop-off', 
+        icon: 'drop' as const 
+      });
+      
+      // Show live captain location
+      if (captainLocation && shouldTrackCaptain) {
+        markers.push({
+          lat: captainLocation.lat,
+          lng: captainLocation.lng,
+          title: 'Captain',
+          icon: 'captain' as const,
+        });
+      }
+    } else {
+      // Show selected pickup and drop
+      if (pickup) markers.push({ lat: pickup.lat, lng: pickup.lng, title: 'Pickup', icon: 'pickup' as const });
+      if (drop) markers.push({ lat: drop.lat, lng: drop.lng, title: 'Drop', icon: 'drop' as const });
+    }
+    
+    return markers;
+  }, [activeRide, pickup, drop, captainLocation, shouldTrackCaptain]);
+
+  // Center map on captain when tracking
+  const mapCenter = useMemo(() => {
+    if (captainLocation && shouldTrackCaptain) {
+      return { lat: captainLocation.lat, lng: captainLocation.lng };
+    }
+    if (activeRide) {
+      return { lat: activeRide.pickup.lat, lng: activeRide.pickup.lng };
+    }
+    return currentLocation;
+  }, [captainLocation, shouldTrackCaptain, activeRide, currentLocation]);
 
   return (
     <div className="h-screen flex flex-col">
@@ -229,11 +285,21 @@ const RiderHome = () => {
       {/* Map */}
       <div className="flex-1 relative">
         <GoogleMapView
-          center={currentLocation}
+          center={mapCenter}
           zoom={15}
           markers={mapMarkers}
           className="h-full"
         />
+
+        {/* Tracking indicator */}
+        {isTracking && (
+          <div className="absolute top-4 left-4 right-4 z-10">
+            <div className="bg-primary/90 text-primary-foreground px-4 py-2 rounded-full text-sm font-medium flex items-center justify-center gap-2">
+              <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+              Tracking captain's location live
+            </div>
+          </div>
+        )}
 
         {/* Active Ride Overlay */}
         {activeRide && (
