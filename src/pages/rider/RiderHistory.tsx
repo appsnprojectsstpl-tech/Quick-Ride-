@@ -6,6 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
+import RideRatingDialog from '@/components/rider/RideRatingDialog';
 
 interface Ride {
   id: string;
@@ -16,6 +17,7 @@ interface Ride {
   requested_at: string;
   completed_at: string | null;
   vehicle_type: string;
+  hasRating?: boolean;
 }
 
 const statusColors: Record<string, string> = {
@@ -28,26 +30,40 @@ const statusColors: Record<string, string> = {
 const RiderHistory = () => {
   const [rides, setRides] = useState<Ride[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [ratingRideId, setRatingRideId] = useState<string | null>(null);
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  useEffect(() => {
+  const fetchRides = async () => {
     if (!user) return;
 
-    const fetchRides = async () => {
-      const { data, error } = await supabase
-        .from('rides')
-        .select('id, status, pickup_address, drop_address, final_fare, requested_at, completed_at, vehicle_type')
-        .eq('rider_id', user.id)
-        .order('requested_at', { ascending: false })
-        .limit(50);
+    const { data: ridesData, error } = await supabase
+      .from('rides')
+      .select('id, status, pickup_address, drop_address, final_fare, requested_at, completed_at, vehicle_type')
+      .eq('rider_id', user.id)
+      .order('requested_at', { ascending: false })
+      .limit(50);
 
-      if (!error && data) {
-        setRides(data);
-      }
-      setIsLoading(false);
-    };
+    if (!error && ridesData) {
+      // Check which rides have ratings
+      const { data: ratings } = await supabase
+        .from('ratings')
+        .select('ride_id')
+        .eq('from_user_id', user.id);
 
+      const ratedRideIds = new Set(ratings?.map((r) => r.ride_id) || []);
+
+      setRides(
+        ridesData.map((ride) => ({
+          ...ride,
+          hasRating: ratedRideIds.has(ride.id),
+        }))
+      );
+    }
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
     fetchRides();
   }, [user]);
 
@@ -113,17 +129,38 @@ const RiderHistory = () => {
                 <span className="text-xs text-muted-foreground capitalize">
                   {ride.vehicle_type}
                 </span>
-                {ride.status === 'completed' && (
-                  <Button variant="ghost" size="sm" className="text-xs">
+                {ride.status === 'completed' && !ride.hasRating && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs"
+                    onClick={() => setRatingRideId(ride.id)}
+                  >
                     <Star className="w-3 h-3 mr-1" />
                     Rate Ride
                   </Button>
+                )}
+                {ride.hasRating && (
+                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    <Star className="w-3 h-3 fill-primary text-primary" />
+                    Rated
+                  </span>
                 )}
               </div>
             </div>
           ))
         )}
       </div>
+
+      {/* Rating Dialog */}
+      {ratingRideId && (
+        <RideRatingDialog
+          isOpen={!!ratingRideId}
+          onClose={() => setRatingRideId(null)}
+          rideId={ratingRideId}
+          onRated={fetchRides}
+        />
+      )}
     </div>
   );
 };
