@@ -1,6 +1,7 @@
 import { useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
 import type { Database } from '@/integrations/supabase/types';
 
 type RideStatus = Database['public']['Enums']['ride_status'];
@@ -39,37 +40,68 @@ export const useRideNotifications = ({
   onStatusChange,
 }: UseRideNotificationsOptions) => {
   const { toast } = useToast();
+  const { 
+    requestPermission, 
+    permission,
+    notifyRideAccepted,
+    notifyCaptainArriving,
+    notifyCaptainArrived,
+    notifyRideStarted,
+    notifyRideCompleted,
+    notifyRideCancelled,
+    notifyRideRequest,
+  } = usePushNotifications();
 
-  const showNotification = useCallback((status: RideStatus) => {
+  const showNotification = useCallback((status: RideStatus, rideData?: any) => {
     const messages = role === 'rider' ? statusMessages : captainStatusMessages;
     const message = messages[status];
     
     if (message) {
+      // In-app toast
       toast({
         title: message.title,
         description: message.description,
         duration: 5000,
       });
 
-      // Browser notification if permitted
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification(message.title, {
-          body: message.description,
-          icon: '/favicon.ico',
-        });
+      // Push notification based on status
+      if (permission === 'granted') {
+        if (role === 'rider') {
+          switch (status) {
+            case 'matched':
+              notifyRideAccepted(rideData?.captainName || 'Your captain', rideData?.vehicleInfo || '');
+              break;
+            case 'captain_arriving':
+              notifyCaptainArriving(rideData?.eta || 'a few minutes');
+              break;
+            case 'waiting_for_rider':
+              notifyCaptainArrived();
+              break;
+            case 'in_progress':
+              notifyRideStarted(rideData?.dropAddress || 'destination');
+              break;
+            case 'completed':
+              notifyRideCompleted(rideData?.fare || 0);
+              break;
+            case 'cancelled':
+              notifyRideCancelled(rideData?.reason);
+              break;
+          }
+        } else {
+          // Captain notifications
+          if (status === 'matched') {
+            notifyRideRequest(rideData?.pickupAddress || 'Pickup location', rideData?.fare || 0);
+          }
+        }
       }
     }
-  }, [role, toast]);
-
-  const requestNotificationPermission = useCallback(async () => {
-    if ('Notification' in window && Notification.permission === 'default') {
-      await Notification.requestPermission();
-    }
-  }, []);
+  }, [role, toast, permission, notifyRideAccepted, notifyCaptainArriving, notifyCaptainArrived, notifyRideStarted, notifyRideCompleted, notifyRideCancelled, notifyRideRequest]);
 
   useEffect(() => {
-    requestNotificationPermission();
-  }, [requestNotificationPermission]);
+    if (permission === 'default') {
+      requestPermission();
+    }
+  }, [permission, requestPermission]);
 
   useEffect(() => {
     if (!userId && !captainId) return;
@@ -122,5 +154,5 @@ export const useRideNotifications = ({
     };
   }, [userId, captainId, role, showNotification, onStatusChange]);
 
-  return { requestNotificationPermission };
+  return { requestPermission };
 };

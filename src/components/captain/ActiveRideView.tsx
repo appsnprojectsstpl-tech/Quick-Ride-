@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react';
-import { Phone, Navigation, AlertTriangle } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Phone, Navigation, AlertTriangle, Volume2, VolumeX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useDirections } from '@/hooks/useDirections';
+import { useVoiceNavigation } from '@/hooks/useVoiceNavigation';
 import NavigationInstructions from './NavigationInstructions';
 
 interface Rider {
@@ -58,9 +59,21 @@ const ActiveRideView = ({
   const [isUpdating, setIsUpdating] = useState(false);
   const { toast } = useToast();
   const { routeInfo, fetchDirections, lastUpdated } = useDirections({ 
-    autoRefreshInterval: 30000, // Refresh every 30 seconds
+    autoRefreshInterval: 30000,
     enabled: true 
   });
+  
+  const {
+    voiceEnabled,
+    toggleVoice,
+    announceStep,
+    announcePickupArrival,
+    announceRideInProgress,
+    announceArrival,
+  } = useVoiceNavigation({ enabled: true });
+  
+  const lastAnnouncedStepRef = useRef<string>('');
+  const lastStatusRef = useRef<string>(status);
 
   const currentStep = statusFlow.find((s) => s.status === status);
 
@@ -87,6 +100,32 @@ const ActiveRideView = ({
       onRouteUpdate(routeInfo.decodedPath);
     }
   }, [routeInfo?.decodedPath, onRouteUpdate]);
+
+  // Voice announcements for navigation steps
+  useEffect(() => {
+    if (!routeInfo?.steps?.length || !voiceEnabled) return;
+    
+    const currentInstruction = routeInfo.steps[0];
+    if (currentInstruction && currentInstruction.instruction !== lastAnnouncedStepRef.current) {
+      announceStep(currentInstruction);
+      lastAnnouncedStepRef.current = currentInstruction.instruction;
+    }
+  }, [routeInfo?.steps, voiceEnabled, announceStep]);
+
+  // Voice announcements for status changes
+  useEffect(() => {
+    if (status === lastStatusRef.current) return;
+    
+    if (status === 'waiting_for_rider' && lastStatusRef.current !== 'waiting_for_rider') {
+      announcePickupArrival();
+    } else if (status === 'in_progress' && lastStatusRef.current !== 'in_progress') {
+      announceRideInProgress(dropAddress);
+    } else if (status === 'completed') {
+      announceArrival('destination');
+    }
+    
+    lastStatusRef.current = status;
+  }, [status, dropAddress, announcePickupArrival, announceRideInProgress, announceArrival]);
 
   const handleUpdateStatus = async () => {
     if (!currentStep) return;
@@ -168,13 +207,21 @@ const ActiveRideView = ({
       )}
 
       {/* Status Header */}
-      <div className="px-4 py-3 bg-primary text-primary-foreground">
-        <p className="font-semibold text-center">
+      <div className="px-4 py-3 bg-primary text-primary-foreground flex items-center justify-between">
+        <p className="font-semibold">
           {status === 'matched' && 'Navigate to Pickup'}
           {status === 'captain_arriving' && 'Going to Pickup'}
           {status === 'waiting_for_rider' && 'Waiting for Rider'}
           {status === 'in_progress' && 'Ride in Progress'}
         </p>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={toggleVoice}
+          className="text-primary-foreground hover:bg-primary-foreground/20"
+        >
+          {voiceEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+        </Button>
       </div>
 
       {/* Rider Info */}
