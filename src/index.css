@@ -29,7 +29,7 @@
     --secondary-foreground: 0 0% 100%;
 
     --muted: 210 20% 96%;
-    --muted-foreground: 215 16% 47%;
+    --muted-foreground: 215 25% 40%;
 
     /* Accent - Electric Green for Success States */
     --accent: 152 69% 45%;
@@ -95,7 +95,7 @@
     --secondary-foreground: 210 40% 98%;
 
     --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
+    --muted-foreground: 215 20% 75%;
 
     --accent: 152 69% 45%;
     --accent-foreground: 0 0% 100%;
