@@ -27,6 +27,7 @@ interface ActiveRide {
   otp: string | null;
   captainId: string | null;
   captain: {
+    id: string;
     name: string;
     phone: string;
     avatar_url: string | null;
@@ -141,6 +142,7 @@ const RiderHome = () => {
             .single();
 
           captainData = {
+            id: (ride.captains as any).id,
             name: captainProfile?.name || 'Captain',
             phone: captainProfile?.phone || '',
             avatar_url: captainProfile?.avatar_url,
@@ -355,6 +357,10 @@ const RiderHome = () => {
               status={activeRide.status}
               captain={activeRide.captain}
               otp={activeRide.otp}
+              pickupLat={activeRide.pickup.lat}
+              pickupLng={activeRide.pickup.lng}
+              dropLat={activeRide.drop.lat}
+              dropLng={activeRide.drop.lng}
               onCancel={handleCancelRide}
               onSOS={handleSOS}
             />
