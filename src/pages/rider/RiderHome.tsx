@@ -8,6 +8,7 @@ import ActiveRideCard from '@/components/rider/ActiveRideCard';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
+import { useRideNotifications } from '@/hooks/useRideNotifications';
 import { Database } from '@/integrations/supabase/types';
 
 type RideStatus = Database['public']['Enums']['ride_status'];
@@ -46,6 +47,15 @@ const RiderHome = () => {
   const [currentLocation, setCurrentLocation] = useState({ lat: 12.9716, lng: 77.5946 });
   const { user, profile } = useAuth();
   const { toast } = useToast();
+
+  // Real-time ride notifications
+  useRideNotifications({
+    userId: user?.id,
+    role: 'rider',
+    onStatusChange: (status) => {
+      console.log('Ride status changed:', status);
+    },
+  });
 
   // Get current location
   useEffect(() => {

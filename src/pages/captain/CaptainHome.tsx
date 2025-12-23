@@ -8,6 +8,7 @@ import ActiveRideView from '@/components/captain/ActiveRideView';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
+import { useRideNotifications } from '@/hooks/useRideNotifications';
 import { AnimatePresence } from 'framer-motion';
 
 interface CaptainHomeProps {
@@ -22,6 +23,15 @@ const CaptainHome = ({ captain }: CaptainHomeProps) => {
   const [riderInfo, setRiderInfo] = useState<any>(null);
   const { user, profile } = useAuth();
   const { toast } = useToast();
+
+  // Real-time ride notifications
+  useRideNotifications({
+    captainId: captain?.id,
+    role: 'captain',
+    onStatusChange: (status) => {
+      console.log('Ride status changed:', status);
+    },
+  });
 
   // Get and update current location
   useEffect(() => {
