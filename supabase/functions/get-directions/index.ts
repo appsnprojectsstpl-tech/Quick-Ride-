@@ -58,8 +58,23 @@ serve(async (req) => {
       },
       steps: leg.steps.map((step: any) => ({
         instruction: step.html_instructions,
-        distance: step.distance.text,
-        duration: step.duration.text,
+        distance: {
+          text: step.distance.text,
+          value: step.distance.value,
+        },
+        duration: {
+          text: step.duration.text,
+          value: step.duration.value,
+        },
+        maneuver: step.maneuver || 'straight',
+        start_location: {
+          lat: step.start_location.lat,
+          lng: step.start_location.lng,
+        },
+        end_location: {
+          lat: step.end_location.lat,
+          lng: step.end_location.lng,
+        },
       })),
     };
 
