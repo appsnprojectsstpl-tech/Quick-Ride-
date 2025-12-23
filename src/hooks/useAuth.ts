@@ -31,8 +31,8 @@ export const useAuth = () => {
     try {
       const [sessionResult, roleResult, profileResult] = await Promise.all([
         supabase.auth.getSession(),
-        supabase.from('user_roles').select('role').eq('user_id', userId).single(),
-        supabase.from('profiles').select('name, phone, email, avatar_url').eq('user_id', userId).single(),
+        supabase.from('user_roles').select('role').eq('user_id', userId).maybeSingle(),
+        supabase.from('profiles').select('name, phone, email, avatar_url').eq('user_id', userId).maybeSingle(),
       ]);
 
       setState({
