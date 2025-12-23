@@ -91,7 +91,7 @@ const Auth = () => {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-display font-bold">
-            <span className="text-gradient">Rapido</span>Clone
+            <span className="text-primary">Quick</span> <span className="text-secondary">Ride</span>
           </h1>
           <p className="text-muted-foreground mt-2">
             {isLogin ? "Welcome back!" : "Create your account"}
@@ -105,10 +105,10 @@ const Auth = () => {
               <button
                 key={type.id}
                 onClick={() => setUserType(type.id)}
-                className={`flex-1 flex flex-col items-center gap-1 p-3 rounded-xl transition-all ${
+                className={`flex-1 flex flex-col items-center gap-1 p-3 rounded-xl transition-all border-2 ${
                   userType === type.id
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-card text-card-foreground border-border hover:border-primary/50"
                 }`}
               >
                 <type.icon className="w-5 h-5" />

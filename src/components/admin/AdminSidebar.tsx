@@ -37,7 +37,7 @@ const AdminSidebar = () => {
       {/* Logo */}
       <div className="p-6 border-b border-sidebar-border">
         <h1 className="text-xl font-display font-bold">
-          <span className="text-sidebar-primary">Rapido</span>Clone
+          <span className="text-sidebar-primary">Quick</span> <span className="text-sidebar-foreground">Ride</span>
         </h1>
         <p className="text-xs text-sidebar-foreground/60 mt-1">Admin Dashboard</p>
       </div>
