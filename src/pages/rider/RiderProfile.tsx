@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { useAuth } from '@/hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
+import EditProfileDialog from '@/components/profile/EditProfileDialog';
 
 const menuItems = [
   { icon: MapPin, label: 'Saved Places', path: '/rider/saved-places' },
@@ -11,8 +12,9 @@ const menuItems = [
 ];
 
 const RiderProfile = () => {
-  const { user, profile, signOut } = useAuth();
+  const { user, profile, signOut, refetchProfile } = useAuth();
   const navigate = useNavigate();
+  const [isEditOpen, setIsEditOpen] = useState(false);
 
   const handleLogout = async () => {
     await signOut();
@@ -57,7 +59,7 @@ const RiderProfile = () => {
             </div>
           </div>
 
-          <Button variant="outline" className="w-full mt-4">
+          <Button variant="outline" className="w-full mt-4" onClick={() => setIsEditOpen(true)}>
             Edit Profile
           </Button>
         </div>
@@ -91,6 +93,18 @@ const RiderProfile = () => {
           Logout
         </Button>
       </div>
+
+      {/* Edit Profile Dialog */}
+      <EditProfileDialog
+        isOpen={isEditOpen}
+        onClose={() => setIsEditOpen(false)}
+        profile={profile ? { 
+          ...profile, 
+          user_id: user?.id || '',
+          email: profile.email || user?.email || null 
+        } : null}
+        onUpdated={() => refetchProfile?.()}
+      />
     </div>
   );
 };

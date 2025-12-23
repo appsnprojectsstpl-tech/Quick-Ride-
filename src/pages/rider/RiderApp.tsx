@@ -4,6 +4,8 @@ import { useAuth } from '@/hooks/useAuth';
 import RiderHome from './RiderHome';
 import RiderHistory from './RiderHistory';
 import RiderProfile from './RiderProfile';
+import EmergencyContacts from './EmergencyContacts';
+import SavedPlaces from './SavedPlaces';
 import RiderNavBar from '@/components/rider/RiderNavBar';
 import { Loader2 } from 'lucide-react';
 
@@ -31,6 +33,8 @@ const RiderApp = () => {
         <Route path="/" element={<RiderHome />} />
         <Route path="/history" element={<RiderHistory />} />
         <Route path="/profile" element={<RiderProfile />} />
+        <Route path="/emergency-contacts" element={<EmergencyContacts />} />
+        <Route path="/saved-places" element={<SavedPlaces />} />
       </Routes>
       <RiderNavBar />
     </div>

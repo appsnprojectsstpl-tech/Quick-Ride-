@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { Database } from '@/integrations/supabase/types';
@@ -11,7 +11,8 @@ interface AuthState {
   role: AppRole | null;
   profile: {
     name: string | null;
-    phone: string | null;
+    phone: string;
+    email: string | null;
     avatar_url: string | null;
   } | null;
   isLoading: boolean;
@@ -25,6 +26,27 @@ export const useAuth = () => {
     profile: null,
     isLoading: true,
   });
+
+  const fetchUserData = useCallback(async (userId: string) => {
+    try {
+      const [sessionResult, roleResult, profileResult] = await Promise.all([
+        supabase.auth.getSession(),
+        supabase.from('user_roles').select('role').eq('user_id', userId).single(),
+        supabase.from('profiles').select('name, phone, email, avatar_url').eq('user_id', userId).single(),
+      ]);
+
+      setState({
+        user: sessionResult.data.session?.user || null,
+        session: sessionResult.data.session,
+        role: roleResult.data?.role || null,
+        profile: profileResult.data || null,
+        isLoading: false,
+      });
+    } catch (error) {
+      console.error('Error fetching user data:', error);
+      setState(prev => ({ ...prev, isLoading: false }));
+    }
+  }, []);
 
   useEffect(() => {
     // Get initial session
@@ -54,32 +76,17 @@ export const useAuth = () => {
     );
 
     return () => subscription.unsubscribe();
-  }, []);
-
-  const fetchUserData = async (userId: string) => {
-    try {
-      const [sessionResult, roleResult, profileResult] = await Promise.all([
-        supabase.auth.getSession(),
-        supabase.from('user_roles').select('role').eq('user_id', userId).single(),
-        supabase.from('profiles').select('name, phone, avatar_url').eq('user_id', userId).single(),
-      ]);
-
-      setState({
-        user: sessionResult.data.session?.user || null,
-        session: sessionResult.data.session,
-        role: roleResult.data?.role || null,
-        profile: profileResult.data || null,
-        isLoading: false,
-      });
-    } catch (error) {
-      console.error('Error fetching user data:', error);
-      setState(prev => ({ ...prev, isLoading: false }));
-    }
-  };
+  }, [fetchUserData]);
 
   const signOut = async () => {
     await supabase.auth.signOut();
   };
 
-  return { ...state, signOut };
+  const refetchProfile = useCallback(() => {
+    if (state.user?.id) {
+      fetchUserData(state.user.id);
+    }
+  }, [state.user?.id, fetchUserData]);
+
+  return { ...state, signOut, refetchProfile };
 };
