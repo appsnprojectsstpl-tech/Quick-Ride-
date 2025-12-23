@@ -10,6 +10,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { useRideNotifications } from '@/hooks/useRideNotifications';
 import { useCaptainTracking } from '@/hooks/useCaptainTracking';
+import { useDirections } from '@/hooks/useDirections';
 import { Database } from '@/integrations/supabase/types';
 
 type RideStatus = Database['public']['Enums']['ride_status'];
@@ -50,6 +51,9 @@ const RiderHome = () => {
   const { user, profile } = useAuth();
   const { toast } = useToast();
 
+  // Directions hook for route polyline
+  const { routeInfo, fetchDirections, clearRoute } = useDirections();
+
   // Real-time ride notifications
   useRideNotifications({
     userId: user?.id,
@@ -67,6 +71,28 @@ const RiderHome = () => {
     captainId: activeRide?.captainId || null,
     enabled: !!shouldTrackCaptain,
   });
+
+  // Fetch route when pickup and drop are set
+  useEffect(() => {
+    if (pickup && drop) {
+      fetchDirections(
+        { lat: pickup.lat, lng: pickup.lng },
+        { lat: drop.lat, lng: drop.lng }
+      );
+    } else {
+      clearRoute();
+    }
+  }, [pickup, drop, fetchDirections, clearRoute]);
+
+  // Also fetch route for active rides
+  useEffect(() => {
+    if (activeRide) {
+      fetchDirections(
+        { lat: activeRide.pickup.lat, lng: activeRide.pickup.lng },
+        { lat: activeRide.drop.lat, lng: activeRide.drop.lng }
+      );
+    }
+  }, [activeRide?.id]);
 
   // Get current location
   useEffect(() => {
@@ -288,8 +314,28 @@ const RiderHome = () => {
           center={mapCenter}
           zoom={15}
           markers={mapMarkers}
+          polylinePath={routeInfo?.decodedPath}
           className="h-full"
         />
+
+        {/* Route info banner */}
+        {routeInfo && !activeRide && (
+          <div className="absolute top-4 left-4 right-4 z-10">
+            <div className="bg-card/95 backdrop-blur px-4 py-3 rounded-xl shadow-lg border border-border flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div>
+                  <p className="text-xs text-muted-foreground">Distance</p>
+                  <p className="font-bold">{routeInfo.distance.text}</p>
+                </div>
+                <div className="w-px h-8 bg-border" />
+                <div>
+                  <p className="text-xs text-muted-foreground">Duration</p>
+                  <p className="font-bold">{routeInfo.duration.text}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Tracking indicator */}
         {isTracking && (
