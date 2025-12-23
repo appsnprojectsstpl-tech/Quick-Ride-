@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { MapPin, Navigation, Clock, IndianRupee, Tag, Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { MapPin, Navigation, Clock, IndianRupee, Tag, Loader2, Check, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -21,7 +21,10 @@ interface FareEstimate {
   time_fare: number;
   surge_multiplier: number;
   total_fare: number;
+  discount: number;
   final_fare: number;
+  promo_applied?: { code: string; discount_type: string; discount_value: number } | null;
+  promo_error?: string | null;
 }
 
 interface RideBookingSheetProps {
@@ -37,13 +40,37 @@ type VehicleType = 'bike' | 'auto' | 'cab';
 const RideBookingSheet = ({ isOpen, onClose, pickup, drop, onRideBooked }: RideBookingSheetProps) => {
   const [vehicleType, setVehicleType] = useState<VehicleType>('bike');
   const [promoCode, setPromoCode] = useState('');
+  const [appliedPromo, setAppliedPromo] = useState<string | null>(null);
+  const [promoError, setPromoError] = useState<string | null>(null);
   const [fareEstimate, setFareEstimate] = useState<FareEstimate | null>(null);
   const [allFares, setAllFares] = useState<{ bike?: number; auto?: number; cab?: number }>({});
   const [isLoading, setIsLoading] = useState(false);
+  const [isApplyingPromo, setIsApplyingPromo] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
   const { toast } = useToast();
 
-  const fetchFareEstimates = async () => {
+  const fetchFareEstimate = async (type: VehicleType, promo?: string) => {
+    if (!pickup || !drop) return null;
+
+    const { data, error } = await supabase.functions.invoke('calculate-fare', {
+      body: {
+        pickup_lat: pickup.lat,
+        pickup_lng: pickup.lng,
+        drop_lat: drop.lat,
+        drop_lng: drop.lng,
+        vehicle_type: type,
+        promo_code: promo || undefined,
+      },
+    });
+
+    if (error) {
+      console.error('Error fetching fare:', error);
+      return null;
+    }
+    return data;
+  };
+
+  const fetchAllFares = async () => {
     if (!pickup || !drop) return;
     setIsLoading(true);
 
@@ -51,24 +78,18 @@ const RideBookingSheet = ({ isOpen, onClose, pickup, drop, onRideBooked }: RideB
       const types: VehicleType[] = ['bike', 'auto', 'cab'];
       const estimates: { bike?: number; auto?: number; cab?: number } = {};
 
-      for (const type of types) {
-        const { data, error } = await supabase.functions.invoke('calculate-fare', {
-          body: {
-            pickup_lat: pickup.lat,
-            pickup_lng: pickup.lng,
-            drop_lat: drop.lat,
-            drop_lng: drop.lng,
-            vehicle_type: type,
-          },
-        });
+      const results = await Promise.all(
+        types.map(type => fetchFareEstimate(type, appliedPromo || undefined))
+      );
 
-        if (!error && data) {
-          estimates[type] = data.final_fare;
-          if (type === vehicleType) {
+      results.forEach((data, index) => {
+        if (data) {
+          estimates[types[index]] = data.final_fare;
+          if (types[index] === vehicleType) {
             setFareEstimate(data);
           }
         }
-      }
+      });
 
       setAllFares(estimates);
     } catch (error) {
@@ -80,18 +101,66 @@ const RideBookingSheet = ({ isOpen, onClose, pickup, drop, onRideBooked }: RideB
 
   const handleVehicleSelect = async (type: VehicleType) => {
     setVehicleType(type);
-    if (pickup && drop) {
-      const { data } = await supabase.functions.invoke('calculate-fare', {
-        body: {
-          pickup_lat: pickup.lat,
-          pickup_lng: pickup.lng,
-          drop_lat: drop.lat,
-          drop_lng: drop.lng,
-          vehicle_type: type,
-        },
+    const data = await fetchFareEstimate(type, appliedPromo || undefined);
+    if (data) setFareEstimate(data);
+  };
+
+  const handleApplyPromo = async () => {
+    if (!promoCode.trim() || !pickup || !drop) return;
+    setIsApplyingPromo(true);
+    setPromoError(null);
+
+    const data = await fetchFareEstimate(vehicleType, promoCode);
+    
+    if (data?.promo_error) {
+      setPromoError(data.promo_error);
+      setAppliedPromo(null);
+      toast({
+        variant: 'destructive',
+        title: 'Invalid promo code',
+        description: data.promo_error,
       });
-      if (data) setFareEstimate(data);
+    } else if (data?.promo_applied) {
+      setAppliedPromo(data.promo_applied.code);
+      setFareEstimate(data);
+      setPromoError(null);
+      
+      // Update all fares with promo
+      const types: VehicleType[] = ['bike', 'auto', 'cab'];
+      const estimates: { bike?: number; auto?: number; cab?: number } = {};
+      const results = await Promise.all(
+        types.map(type => fetchFareEstimate(type, promoCode))
+      );
+      results.forEach((d, index) => {
+        if (d) estimates[types[index]] = d.final_fare;
+      });
+      setAllFares(estimates);
+
+      toast({
+        title: 'Promo applied!',
+        description: `You saved ₹${data.discount}`,
+      });
     }
+
+    setIsApplyingPromo(false);
+  };
+
+  const handleRemovePromo = async () => {
+    setAppliedPromo(null);
+    setPromoCode('');
+    setPromoError(null);
+    
+    // Refetch fares without promo
+    const data = await fetchFareEstimate(vehicleType);
+    if (data) setFareEstimate(data);
+    
+    const types: VehicleType[] = ['bike', 'auto', 'cab'];
+    const estimates: { bike?: number; auto?: number; cab?: number } = {};
+    const results = await Promise.all(types.map(type => fetchFareEstimate(type)));
+    results.forEach((d, index) => {
+      if (d) estimates[types[index]] = d.final_fare;
+    });
+    setAllFares(estimates);
   };
 
   const handleBookRide = async () => {
@@ -120,8 +189,9 @@ const RideBookingSheet = ({ isOpen, onClose, pickup, drop, onRideBooked }: RideB
           time_fare: fareEstimate.time_fare,
           surge_multiplier: fareEstimate.surge_multiplier,
           total_fare: fareEstimate.total_fare,
+          discount: fareEstimate.discount,
           final_fare: fareEstimate.final_fare,
-          promo_code: promoCode || null,
+          promo_code: appliedPromo || null,
           status: 'pending',
         })
         .select()
@@ -147,12 +217,11 @@ const RideBookingSheet = ({ isOpen, onClose, pickup, drop, onRideBooked }: RideB
     }
   };
 
-  // Fetch fares when sheet opens with both locations
-  useState(() => {
+  useEffect(() => {
     if (isOpen && pickup && drop) {
-      fetchFareEstimates();
+      fetchAllFares();
     }
-  });
+  }, [isOpen, pickup?.lat, drop?.lat]);
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -220,26 +289,71 @@ const RideBookingSheet = ({ isOpen, onClose, pickup, drop, onRideBooked }: RideB
                     <span>Applied</span>
                   </div>
                 )}
+                {fareEstimate.discount > 0 && (
+                  <div className="flex justify-between text-sm text-success">
+                    <span>Promo Discount</span>
+                    <span>-₹{fareEstimate.discount}</span>
+                  </div>
+                )}
                 <div className="flex justify-between font-bold text-lg mt-2 pt-2 border-t border-border">
                   <span>Total</span>
-                  <span className="text-primary">₹{fareEstimate.final_fare}</span>
+                  <div className="flex items-center gap-2">
+                    {fareEstimate.discount > 0 && (
+                      <span className="text-sm text-muted-foreground line-through">
+                        ₹{fareEstimate.total_fare}
+                      </span>
+                    )}
+                    <span className="text-primary">₹{fareEstimate.final_fare}</span>
+                  </div>
                 </div>
               </div>
             </div>
           )}
 
           {/* Promo Code */}
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Tag className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                value={promoCode}
-                onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
-                placeholder="Promo code"
-                className="pl-9"
-              />
-            </div>
-            <Button variant="outline">Apply</Button>
+          <div className="space-y-2">
+            {appliedPromo ? (
+              <div className="flex items-center justify-between p-3 bg-success/10 border border-success/20 rounded-xl">
+                <div className="flex items-center gap-2">
+                  <Check className="w-4 h-4 text-success" />
+                  <span className="font-medium text-success">{appliedPromo}</span>
+                  <span className="text-sm text-muted-foreground">applied</span>
+                </div>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={handleRemovePromo}
+                  className="h-8 w-8 p-0"
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Tag className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    value={promoCode}
+                    onChange={(e) => {
+                      setPromoCode(e.target.value.toUpperCase());
+                      setPromoError(null);
+                    }}
+                    placeholder="Enter promo code"
+                    className={`pl-9 ${promoError ? 'border-destructive' : ''}`}
+                  />
+                </div>
+                <Button 
+                  variant="outline" 
+                  onClick={handleApplyPromo}
+                  disabled={!promoCode.trim() || isApplyingPromo}
+                >
+                  {isApplyingPromo ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Apply'}
+                </Button>
+              </div>
+            )}
+            {promoError && (
+              <p className="text-xs text-destructive">{promoError}</p>
+            )}
           </div>
 
           {/* Payment Method */}
