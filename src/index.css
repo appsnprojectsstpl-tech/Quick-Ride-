@@ -2,95 +2,137 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
+/* Rapido Clone - Design System
+   A bold, energetic ride-hailing theme with vibrant yellow accents
 */
+
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap');
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Brand Colors - Energetic Yellow & Deep Navy */
+    --background: 0 0% 98%;
+    --foreground: 222 47% 11%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 222 47% 11%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 222 47% 11%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    /* Primary - Vibrant Yellow (Rapido-inspired) */
+    --primary: 45 100% 51%;
+    --primary-foreground: 222 47% 11%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    /* Secondary - Deep Navy */
+    --secondary: 222 47% 11%;
+    --secondary-foreground: 0 0% 100%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 210 20% 96%;
+    --muted-foreground: 215 16% 47%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    /* Accent - Electric Green for Success States */
+    --accent: 152 69% 45%;
+    --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    /* Warning - Orange */
+    --warning: 25 95% 53%;
+    --warning-foreground: 0 0% 100%;
 
-    --radius: 0.5rem;
+    /* Success - Green */
+    --success: 152 69% 45%;
+    --success-foreground: 0 0% 100%;
 
-    --sidebar-background: 0 0% 98%;
+    /* Info - Blue */
+    --info: 217 91% 60%;
+    --info-foreground: 0 0% 100%;
 
-    --sidebar-foreground: 240 5.3% 26.1%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 45 100% 51%;
 
-    --sidebar-primary: 240 5.9% 10%;
+    --radius: 0.75rem;
 
-    --sidebar-primary-foreground: 0 0% 98%;
+    /* Sidebar (Admin Dashboard) */
+    --sidebar-background: 222 47% 11%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 45 100% 51%;
+    --sidebar-primary-foreground: 222 47% 11%;
+    --sidebar-accent: 222 47% 18%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 222 47% 18%;
+    --sidebar-ring: 45 100% 51%;
 
-    --sidebar-accent: 240 4.8% 95.9%;
+    /* Custom Shadows */
+    --shadow-sm: 0 1px 2px 0 hsl(222 47% 11% / 0.05);
+    --shadow-md: 0 4px 6px -1px hsl(222 47% 11% / 0.1);
+    --shadow-lg: 0 10px 15px -3px hsl(222 47% 11% / 0.1);
+    --shadow-glow: 0 0 20px hsl(45 100% 51% / 0.3);
 
-    --sidebar-accent-foreground: 240 5.9% 10%;
-
-    --sidebar-border: 220 13% 91%;
-
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(45 100% 51%), hsl(35 100% 55%));
+    --gradient-hero: linear-gradient(180deg, hsl(0 0% 98%) 0%, hsl(45 100% 97%) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(210 20% 99%) 100%);
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
+    --background: 222 47% 6%;
     --foreground: 210 40% 98%;
 
-    --card: 222.2 84% 4.9%;
+    --card: 222 47% 9%;
     --card-foreground: 210 40% 98%;
 
-    --popover: 222.2 84% 4.9%;
+    --popover: 222 47% 9%;
     --popover-foreground: 210 40% 98%;
 
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+    --primary: 45 100% 51%;
+    --primary-foreground: 222 47% 11%;
 
-    --secondary: 217.2 32.6% 17.5%;
+    --secondary: 217 33% 17%;
     --secondary-foreground: 210 40% 98%;
 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
 
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 152 69% 45%;
+    --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 62.8% 30.6%;
+    --destructive: 0 63% 31%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --warning: 25 95% 53%;
+    --warning-foreground: 0 0% 100%;
+
+    --success: 152 69% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --info: 217 91% 60%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
+    --ring: 45 100% 51%;
+
+    --sidebar-background: 222 47% 6%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 45 100% 51%;
+    --sidebar-primary-foreground: 222 47% 11%;
+    --sidebar-accent: 222 47% 12%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 222 47% 12%;
+    --sidebar-ring: 45 100% 51%;
+
+    --shadow-sm: 0 1px 2px 0 hsl(0 0% 0% / 0.3);
+    --shadow-md: 0 4px 6px -1px hsl(0 0% 0% / 0.4);
+    --shadow-lg: 0 10px 15px -3px hsl(0 0% 0% / 0.4);
+    --shadow-glow: 0 0 20px hsl(45 100% 51% / 0.4);
+
+    --gradient-primary: linear-gradient(135deg, hsl(45 100% 51%), hsl(35 100% 55%));
+    --gradient-hero: linear-gradient(180deg, hsl(222 47% 6%) 0%, hsl(222 47% 9%) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(222 47% 9%) 0%, hsl(222 47% 11%) 100%);
   }
 }
 
@@ -100,6 +142,177 @@ All colors MUST be HSL.
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'DM Sans', system-ui, sans-serif;
   }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+    @apply font-semibold tracking-tight;
+  }
+}
+
+@layer components {
+  /* Status Badges */
+  .status-badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium;
+  }
+
+  .status-online {
+    @apply bg-success/10 text-success;
+  }
+
+  .status-offline {
+    @apply bg-muted text-muted-foreground;
+  }
+
+  .status-busy {
+    @apply bg-warning/10 text-warning;
+  }
+
+  /* Map Container */
+  .map-container {
+    @apply w-full h-full rounded-xl overflow-hidden;
+  }
+
+  /* Bottom Sheet Handle */
+  .bottom-sheet-handle {
+    @apply w-12 h-1.5 bg-muted-foreground/30 rounded-full mx-auto mb-4;
+  }
+
+  /* Floating Action Button */
+  .fab {
+    @apply fixed bottom-24 right-4 w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center;
+  }
+
+  /* SOS Button */
+  .sos-button {
+    @apply bg-destructive text-destructive-foreground font-bold uppercase tracking-wider;
+  }
+
+  /* Ride Card */
+  .ride-card {
+    @apply bg-card rounded-xl p-4 shadow-md border border-border/50;
+  }
+
+  /* Captain Card */
+  .captain-card {
+    @apply bg-card rounded-2xl p-4 shadow-lg border border-border/50 space-y-3;
+  }
+
+  /* Glass Effect */
+  .glass {
+    @apply bg-background/80 backdrop-blur-lg border border-border/50;
+  }
+
+  /* Pulse Animation for Live Indicators */
+  .pulse-dot {
+    @apply relative;
+  }
+
+  .pulse-dot::before {
+    content: '';
+    @apply absolute inset-0 rounded-full bg-current animate-ping opacity-75;
+  }
+
+  /* Mobile App Layout */
+  .mobile-layout {
+    @apply min-h-screen flex flex-col bg-background;
+  }
+
+  .mobile-header {
+    @apply sticky top-0 z-50 glass px-4 py-3 flex items-center gap-3;
+  }
+
+  .mobile-content {
+    @apply flex-1 overflow-auto;
+  }
+
+  .mobile-footer {
+    @apply sticky bottom-0 z-50 glass px-4 py-3 border-t border-border;
+  }
+
+  /* Navigation Bar */
+  .nav-bar {
+    @apply fixed bottom-0 left-0 right-0 glass border-t border-border flex items-center justify-around px-2 py-2 safe-area-pb;
+  }
+
+  .nav-item {
+    @apply flex flex-col items-center gap-1 px-4 py-2 text-muted-foreground transition-colors;
+  }
+
+  .nav-item.active {
+    @apply text-primary;
+  }
+
+  /* Safe Area Padding */
+  .safe-area-pb {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .safe-area-pt {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+}
+
+@layer utilities {
+  /* Text Gradient */
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: var(--gradient-primary);
+  }
+
+  /* Skeleton Loading */
+  .skeleton {
+    @apply animate-pulse bg-muted rounded;
+  }
+
+  /* Hide Scrollbar */
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Truncate Multi-line */
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
+
+/* Mapbox Overrides */
+.mapboxgl-map {
+  font-family: 'DM Sans', system-ui, sans-serif;
+}
+
+.mapboxgl-ctrl-logo,
+.mapboxgl-ctrl-attrib {
+  display: none !important;
+}
+
+.mapboxgl-popup-content {
+  @apply rounded-xl shadow-lg p-3 bg-card;
+}
+
+.mapboxgl-popup-tip {
+  border-top-color: hsl(var(--card)) !important;
+}
+
+/* Custom Marker */
+.captain-marker {
+  @apply w-10 h-10 bg-primary rounded-full flex items-center justify-center shadow-lg border-2 border-background;
+}
+
+.pickup-marker {
+  @apply w-6 h-6 bg-success rounded-full border-4 border-background shadow-lg;
+}
+
+.drop-marker {
+  @apply w-6 h-6 bg-destructive rounded-full border-4 border-background shadow-lg;
 }
