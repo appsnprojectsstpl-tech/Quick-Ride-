@@ -3,12 +3,13 @@ import { Menu, Power } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import GoogleMapView from '@/components/maps/GoogleMapView';
-import RideRequestCard from '@/components/captain/RideRequestCard';
+import RideOfferPopup from '@/components/captain/RideOfferPopup';
 import ActiveRideView from '@/components/captain/ActiveRideView';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { useRideNotifications } from '@/hooks/useRideNotifications';
+import { useRideOffers } from '@/hooks/useRideOffers';
 import { AnimatePresence } from 'framer-motion';
 
 interface CaptainHomeProps {
@@ -18,10 +19,10 @@ interface CaptainHomeProps {
 const CaptainHome = ({ captain }: CaptainHomeProps) => {
   const [isOnline, setIsOnline] = useState(captain?.status === 'online');
   const [currentLocation, setCurrentLocation] = useState({ lat: 12.9716, lng: 77.5946 });
-  const [pendingRequest, setPendingRequest] = useState<any>(null);
   const [activeRide, setActiveRide] = useState<any>(null);
   const [riderInfo, setRiderInfo] = useState<any>(null);
   const [routePath, setRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
+  const [captainMetrics, setCaptainMetrics] = useState<any>(null);
   const { profile } = useAuth();
   const { toast } = useToast();
 
@@ -33,6 +34,31 @@ const CaptainHome = ({ captain }: CaptainHomeProps) => {
       console.log('Ride status changed:', status);
     },
   });
+
+  // Real-time ride offers
+  const { currentOffer, clearOffer } = useRideOffers({
+    captainId: captain?.id,
+    enabled: isOnline && !activeRide,
+  });
+
+  // Fetch captain metrics
+  useEffect(() => {
+    if (!captain?.id) return;
+
+    const fetchMetrics = async () => {
+      const { data } = await supabase
+        .from('captain_metrics')
+        .select('*')
+        .eq('captain_id', captain.id)
+        .single();
+      
+      if (data) {
+        setCaptainMetrics(data);
+      }
+    };
+
+    fetchMetrics();
+  }, [captain?.id]);
 
   // Get and update current location
   useEffect(() => {
@@ -64,6 +90,20 @@ const CaptainHome = ({ captain }: CaptainHomeProps) => {
 
   // Toggle online status
   const handleToggleOnline = async () => {
+    // Check if in cooldown
+    if (captainMetrics?.cooldown_until) {
+      const cooldownEnd = new Date(captainMetrics.cooldown_until);
+      if (cooldownEnd > new Date()) {
+        const minsRemaining = Math.ceil((cooldownEnd.getTime() - Date.now()) / 60000);
+        toast({
+          variant: 'destructive',
+          title: 'Cooldown Active',
+          description: `You can go online in ${minsRemaining} minutes due to excessive cancellations.`,
+        });
+        return;
+      }
+    }
+
     const newStatus = !isOnline;
     setIsOnline(newStatus);
 
@@ -122,6 +162,15 @@ const CaptainHome = ({ captain }: CaptainHomeProps) => {
             const newRide = payload.new as any;
             if (['matched', 'captain_arriving', 'waiting_for_rider', 'in_progress'].includes(newRide.status)) {
               setActiveRide(newRide);
+              // Fetch rider info for new rides
+              if (!riderInfo && newRide.rider_id) {
+                supabase
+                  .from('profiles')
+                  .select('name, phone, avatar_url')
+                  .eq('user_id', newRide.rider_id)
+                  .single()
+                  .then(({ data }) => setRiderInfo(data));
+              }
             } else if (newRide.status === 'completed' || newRide.status === 'cancelled') {
               setActiveRide(null);
               setRiderInfo(null);
@@ -137,25 +186,79 @@ const CaptainHome = ({ captain }: CaptainHomeProps) => {
     };
   }, [captain?.id]);
 
-  const handleAcceptRequest = () => {
-    setPendingRequest(null);
-    toast({ title: 'Ride accepted!' });
+  const handleOfferAccepted = (rideDetails: any) => {
+    clearOffer();
+    setActiveRide(rideDetails);
+    toast({ title: 'Ride accepted!', description: 'Navigate to pickup location.' });
+    
+    // Fetch rider info
+    if (rideDetails?.rider_id) {
+      supabase
+        .from('profiles')
+        .select('name, phone, avatar_url')
+        .eq('user_id', rideDetails.rider_id)
+        .single()
+        .then(({ data }) => setRiderInfo(data));
+    }
   };
 
-  const handleDeclineRequest = () => {
-    setPendingRequest(null);
+  const handleOfferDeclined = () => {
+    clearOffer();
   };
 
-  const handleStatusUpdate = (newStatus: string) => {
+  const handleStatusUpdate = async (newStatus: string) => {
     if (activeRide) {
       setActiveRide({ ...activeRide, status: newStatus });
       if (newStatus === 'completed') {
+        // Update metrics on completion
+        if (captainMetrics) {
+          setCaptainMetrics({
+            ...captainMetrics,
+            total_rides_completed: (captainMetrics.total_rides_completed || 0) + 1,
+          });
+        }
         setTimeout(() => {
           setActiveRide(null);
           setRiderInfo(null);
           setRoutePath([]);
         }, 2000);
       }
+    }
+  };
+
+  const handleCancelRide = async (reason: string) => {
+    if (!activeRide) return;
+
+    try {
+      const { data, error } = await supabase.functions.invoke('handle-cancellation', {
+        body: {
+          ride_id: activeRide.id,
+          cancelled_by: 'captain',
+          user_id: captain?.user_id,
+          captain_id: captain?.id,
+          reason,
+        },
+      });
+
+      if (error) throw error;
+
+      setActiveRide(null);
+      setRiderInfo(null);
+      setRoutePath([]);
+
+      if (data?.penalty_type === 'cooldown') {
+        toast({
+          variant: 'destructive',
+          title: 'Cooldown Applied',
+          description: 'You have been placed in a 30-minute cooldown due to excessive cancellations.',
+        });
+        setIsOnline(false);
+      } else {
+        toast({ title: 'Ride cancelled', description: reason });
+      }
+    } catch (error) {
+      console.error('Cancel error:', error);
+      toast({ variant: 'destructive', title: 'Failed to cancel ride' });
     }
   };
 
@@ -220,6 +323,12 @@ const CaptainHome = ({ captain }: CaptainHomeProps) => {
             <p className="text-xl font-bold">⭐ {captain?.rating?.toFixed(1) || '5.0'}</p>
             <p className="text-xs text-muted-foreground">Rating</p>
           </div>
+          {captainMetrics && (
+            <div className="text-center">
+              <p className="text-xl font-bold text-success">{captainMetrics.acceptance_rate?.toFixed(0) || 100}%</p>
+              <p className="text-xs text-muted-foreground">Accept Rate</p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -240,6 +349,11 @@ const CaptainHome = ({ captain }: CaptainHomeProps) => {
               <Power className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
               <h2 className="text-xl font-bold mb-2">You're Offline</h2>
               <p className="text-muted-foreground mb-4">Go online to start receiving ride requests</p>
+              {captainMetrics?.cooldown_until && new Date(captainMetrics.cooldown_until) > new Date() ? (
+                <div className="text-destructive text-sm mb-4">
+                  Cooldown active until {new Date(captainMetrics.cooldown_until).toLocaleTimeString()}
+                </div>
+              ) : null}
               <Button onClick={handleToggleOnline} size="lg">
                 Go Online
               </Button>
@@ -270,15 +384,14 @@ const CaptainHome = ({ captain }: CaptainHomeProps) => {
         )}
       </div>
 
-      {/* Ride Request Popup */}
+      {/* Ride Offer Popup */}
       <AnimatePresence>
-        {pendingRequest && !activeRide && (
-          <RideRequestCard
-            request={pendingRequest}
-            distanceToPickup={2.5}
-            onAccept={handleAcceptRequest}
-            onDecline={handleDeclineRequest}
-            timeRemaining={30}
+        {currentOffer && !activeRide && (
+          <RideOfferPopup
+            offer={currentOffer}
+            captainId={captain?.id}
+            onAccepted={handleOfferAccepted}
+            onDeclined={handleOfferDeclined}
           />
         )}
       </AnimatePresence>

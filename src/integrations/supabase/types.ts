@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      cancellation_penalties: {
+        Row: {
+          cancelled_by: string
+          city: string
+          cooldown_minutes: number | null
+          created_at: string
+          id: string
+          is_active: boolean
+          max_time_after_match_seconds: number | null
+          min_time_after_match_seconds: number | null
+          penalty_amount: number
+          penalty_type: string
+          ride_status: string
+        }
+        Insert: {
+          cancelled_by: string
+          city: string
+          cooldown_minutes?: number | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          max_time_after_match_seconds?: number | null
+          min_time_after_match_seconds?: number | null
+          penalty_amount?: number
+          penalty_type?: string
+          ride_status: string
+        }
+        Update: {
+          cancelled_by?: string
+          city?: string
+          cooldown_minutes?: number | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          max_time_after_match_seconds?: number | null
+          min_time_after_match_seconds?: number | null
+          penalty_amount?: number
+          penalty_type?: string
+          ride_status?: string
+        }
+        Relationships: []
+      }
       captain_documents: {
         Row: {
           captain_id: string
@@ -56,6 +98,74 @@ export type Database = {
             foreignKeyName: "captain_documents_captain_id_fkey"
             columns: ["captain_id"]
             isOneToOne: false
+            referencedRelation: "captains"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      captain_metrics: {
+        Row: {
+          acceptance_rate: number | null
+          avg_response_time_seconds: number | null
+          cancellation_rate: number | null
+          captain_id: string
+          cooldown_until: string | null
+          daily_cancellation_count: number | null
+          daily_cancellation_reset_at: string | null
+          earnings_this_week: number | null
+          earnings_today: number | null
+          id: string
+          total_offers_accepted: number | null
+          total_offers_declined: number | null
+          total_offers_expired: number | null
+          total_offers_received: number | null
+          total_rides_cancelled: number | null
+          total_rides_completed: number | null
+          updated_at: string
+        }
+        Insert: {
+          acceptance_rate?: number | null
+          avg_response_time_seconds?: number | null
+          cancellation_rate?: number | null
+          captain_id: string
+          cooldown_until?: string | null
+          daily_cancellation_count?: number | null
+          daily_cancellation_reset_at?: string | null
+          earnings_this_week?: number | null
+          earnings_today?: number | null
+          id?: string
+          total_offers_accepted?: number | null
+          total_offers_declined?: number | null
+          total_offers_expired?: number | null
+          total_offers_received?: number | null
+          total_rides_cancelled?: number | null
+          total_rides_completed?: number | null
+          updated_at?: string
+        }
+        Update: {
+          acceptance_rate?: number | null
+          avg_response_time_seconds?: number | null
+          cancellation_rate?: number | null
+          captain_id?: string
+          cooldown_until?: string | null
+          daily_cancellation_count?: number | null
+          daily_cancellation_reset_at?: string | null
+          earnings_this_week?: number | null
+          earnings_today?: number | null
+          id?: string
+          total_offers_accepted?: number | null
+          total_offers_declined?: number | null
+          total_offers_expired?: number | null
+          total_offers_received?: number | null
+          total_rides_cancelled?: number | null
+          total_rides_completed?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "captain_metrics_captain_id_fkey"
+            columns: ["captain_id"]
+            isOneToOne: true
             referencedRelation: "captains"
             referencedColumns: ["id"]
           },
@@ -242,6 +352,63 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      matching_config: {
+        Row: {
+          captain_delay_threshold_minutes: number
+          city: string
+          created_at: string
+          id: string
+          initial_radius_km: number
+          is_active: boolean
+          max_offers_per_ride: number
+          max_radius_km: number
+          max_retry_attempts: number
+          offer_timeout_seconds: number
+          radius_expansion_step_km: number
+          score_weight_acceptance: number
+          score_weight_cancellation: number
+          score_weight_eta: number
+          score_weight_rating: number
+          updated_at: string
+        }
+        Insert: {
+          captain_delay_threshold_minutes?: number
+          city: string
+          created_at?: string
+          id?: string
+          initial_radius_km?: number
+          is_active?: boolean
+          max_offers_per_ride?: number
+          max_radius_km?: number
+          max_retry_attempts?: number
+          offer_timeout_seconds?: number
+          radius_expansion_step_km?: number
+          score_weight_acceptance?: number
+          score_weight_cancellation?: number
+          score_weight_eta?: number
+          score_weight_rating?: number
+          updated_at?: string
+        }
+        Update: {
+          captain_delay_threshold_minutes?: number
+          city?: string
+          created_at?: string
+          id?: string
+          initial_radius_km?: number
+          is_active?: boolean
+          max_offers_per_ride?: number
+          max_radius_km?: number
+          max_retry_attempts?: number
+          offer_timeout_seconds?: number
+          radius_expansion_step_km?: number
+          score_weight_acceptance?: number
+          score_weight_cancellation?: number
+          score_weight_eta?: number
+          score_weight_rating?: number
+          updated_at?: string
+        }
+        Relationships: []
       }
       pricing_config: {
         Row: {
@@ -445,17 +612,83 @@ export type Database = {
           },
         ]
       }
+      ride_offers: {
+        Row: {
+          captain_id: string
+          created_at: string
+          decline_reason: string | null
+          distance_to_pickup_km: number | null
+          estimated_earnings: number | null
+          eta_minutes: number | null
+          expires_at: string
+          id: string
+          offer_sent_at: string
+          offer_sequence: number
+          responded_at: string | null
+          response_status: string
+          ride_id: string
+        }
+        Insert: {
+          captain_id: string
+          created_at?: string
+          decline_reason?: string | null
+          distance_to_pickup_km?: number | null
+          estimated_earnings?: number | null
+          eta_minutes?: number | null
+          expires_at: string
+          id?: string
+          offer_sent_at?: string
+          offer_sequence?: number
+          responded_at?: string | null
+          response_status?: string
+          ride_id: string
+        }
+        Update: {
+          captain_id?: string
+          created_at?: string
+          decline_reason?: string | null
+          distance_to_pickup_km?: number | null
+          estimated_earnings?: number | null
+          eta_minutes?: number | null
+          expires_at?: string
+          id?: string
+          offer_sent_at?: string
+          offer_sequence?: number
+          responded_at?: string | null
+          response_status?: string
+          ride_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ride_offers_captain_id_fkey"
+            columns: ["captain_id"]
+            isOneToOne: false
+            referencedRelation: "captains"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ride_offers_ride_id_fkey"
+            columns: ["ride_id"]
+            isOneToOne: false
+            referencedRelation: "rides"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       rides: {
         Row: {
           actual_distance_km: number | null
           actual_duration_mins: number | null
           base_fare: number | null
+          cancellation_fee: number | null
           cancellation_reason: string | null
           cancelled_at: string | null
           cancelled_by: string | null
+          cancelled_by_user_id: string | null
           captain_arrived_at: string | null
           captain_id: string | null
           completed_at: string | null
+          current_radius_km: number | null
           discount: number | null
           distance_fare: number | null
           drop_address: string
@@ -463,15 +696,19 @@ export type Database = {
           drop_lng: number
           estimated_distance_km: number | null
           estimated_duration_mins: number | null
+          excluded_captain_ids: string[] | null
           final_fare: number | null
           id: string
+          last_offer_sent_at: string | null
           matched_at: string | null
+          matching_attempts: number | null
           otp: string | null
           payment_method: string | null
           pickup_address: string
           pickup_lat: number
           pickup_lng: number
           promo_code: string | null
+          reassignment_count: number | null
           requested_at: string
           rider_id: string | null
           route_polyline: string | null
@@ -487,12 +724,15 @@ export type Database = {
           actual_distance_km?: number | null
           actual_duration_mins?: number | null
           base_fare?: number | null
+          cancellation_fee?: number | null
           cancellation_reason?: string | null
           cancelled_at?: string | null
           cancelled_by?: string | null
+          cancelled_by_user_id?: string | null
           captain_arrived_at?: string | null
           captain_id?: string | null
           completed_at?: string | null
+          current_radius_km?: number | null
           discount?: number | null
           distance_fare?: number | null
           drop_address: string
@@ -500,15 +740,19 @@ export type Database = {
           drop_lng: number
           estimated_distance_km?: number | null
           estimated_duration_mins?: number | null
+          excluded_captain_ids?: string[] | null
           final_fare?: number | null
           id?: string
+          last_offer_sent_at?: string | null
           matched_at?: string | null
+          matching_attempts?: number | null
           otp?: string | null
           payment_method?: string | null
           pickup_address: string
           pickup_lat: number
           pickup_lng: number
           promo_code?: string | null
+          reassignment_count?: number | null
           requested_at?: string
           rider_id?: string | null
           route_polyline?: string | null
@@ -524,12 +768,15 @@ export type Database = {
           actual_distance_km?: number | null
           actual_duration_mins?: number | null
           base_fare?: number | null
+          cancellation_fee?: number | null
           cancellation_reason?: string | null
           cancelled_at?: string | null
           cancelled_by?: string | null
+          cancelled_by_user_id?: string | null
           captain_arrived_at?: string | null
           captain_id?: string | null
           completed_at?: string | null
+          current_radius_km?: number | null
           discount?: number | null
           distance_fare?: number | null
           drop_address?: string
@@ -537,15 +784,19 @@ export type Database = {
           drop_lng?: number
           estimated_distance_km?: number | null
           estimated_duration_mins?: number | null
+          excluded_captain_ids?: string[] | null
           final_fare?: number | null
           id?: string
+          last_offer_sent_at?: string | null
           matched_at?: string | null
+          matching_attempts?: number | null
           otp?: string | null
           payment_method?: string | null
           pickup_address?: string
           pickup_lat?: number
           pickup_lng?: number
           promo_code?: string | null
+          reassignment_count?: number | null
           requested_at?: string
           rider_id?: string | null
           route_polyline?: string | null

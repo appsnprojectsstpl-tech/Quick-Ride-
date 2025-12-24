@@ -5,6 +5,7 @@ import GoogleMapView from '@/components/maps/GoogleMapView';
 import LocationSearch from '@/components/rider/LocationSearch';
 import RideBookingSheet from '@/components/rider/RideBookingSheet';
 import ActiveRideCard from '@/components/rider/ActiveRideCard';
+import CancellationDialog from '@/components/rider/CancellationDialog';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
@@ -26,6 +27,7 @@ interface ActiveRide {
   status: RideStatus;
   otp: string | null;
   captainId: string | null;
+  matchedAt: string | null;
   captain: {
     id: string;
     name: string;
@@ -49,6 +51,8 @@ const RiderHome = () => {
   const [isBookingOpen, setIsBookingOpen] = useState(false);
   const [activeRide, setActiveRide] = useState<ActiveRide | null>(null);
   const [currentLocation, setCurrentLocation] = useState({ lat: 12.9716, lng: 77.5946 });
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const { user, profile } = useAuth();
   const { toast } = useToast();
 
@@ -61,6 +65,11 @@ const RiderHome = () => {
     role: 'rider',
     onStatusChange: (status) => {
       console.log('Ride status changed:', status);
+      if (status === 'pending') {
+        setIsSearching(true);
+      } else {
+        setIsSearching(false);
+      }
     },
   });
 
@@ -119,7 +128,7 @@ const RiderHome = () => {
         .from('rides')
         .select(`
           id, status, otp, pickup_lat, pickup_lng, pickup_address,
-          drop_lat, drop_lng, drop_address, captain_id,
+          drop_lat, drop_lng, drop_address, captain_id, matched_at,
           captains (
             id, rating, user_id,
             vehicles (make, model, registration_number)
@@ -133,6 +142,12 @@ const RiderHome = () => {
       if (rides && rides.length > 0) {
         const ride = rides[0];
         let captainData = null;
+
+        if (ride.status === 'pending') {
+          setIsSearching(true);
+        } else {
+          setIsSearching(false);
+        }
 
         if (ride.captains) {
           const { data: captainProfile } = await supabase
@@ -157,10 +172,14 @@ const RiderHome = () => {
           status: ride.status,
           otp: ride.otp,
           captainId: (ride.captains as any)?.id || null,
+          matchedAt: ride.matched_at,
           captain: captainData,
           pickup: { lat: ride.pickup_lat, lng: ride.pickup_lng, address: ride.pickup_address },
           drop: { lat: ride.drop_lat, lng: ride.drop_lng, address: ride.drop_address },
         });
+      } else {
+        setActiveRide(null);
+        setIsSearching(false);
       }
     };
 
@@ -189,40 +208,82 @@ const RiderHome = () => {
   }, [user]);
 
   const handleRideBooked = async (rideId: string) => {
-    // Try to match with a captain
-    const { data, error } = await supabase.functions.invoke('match-captain', {
+    setIsSearching(true);
+    
+    // Try to match with a captain using v2 matching engine
+    const { data, error } = await supabase.functions.invoke('match-captain-v2', {
       body: {
         ride_id: rideId,
         pickup_lat: pickup?.lat,
         pickup_lng: pickup?.lng,
         vehicle_type: 'bike',
+        estimated_fare: 50,
+        estimated_distance_km: routeInfo?.distance?.value ? routeInfo.distance.value / 1000 : 5,
+        estimated_duration_mins: routeInfo?.duration?.value ? Math.round(routeInfo.duration.value / 60) : 15,
       },
     });
 
-    if (error || !data?.matched) {
+    if (error) {
+      console.error('Matching error:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error finding captain',
+        description: 'Please try again.',
+      });
+      setIsSearching(false);
+      return;
+    }
+
+    if (data?.matched) {
+      toast({
+        title: 'Captain found!',
+        description: `${data.captain.name} is on the way.`,
+      });
+    } else if (data?.retry) {
+      toast({
+        title: 'Searching for captains...',
+        description: 'Expanding search radius.',
+      });
+      // The frontend will handle retry via realtime subscription
+    } else {
       toast({
         title: 'No captains available',
-        description: 'We\'ll keep looking for a captain nearby.',
+        description: data?.message || 'Please try again later.',
       });
+      setIsSearching(false);
     }
   };
 
-  const handleCancelRide = async () => {
+  const handleCancelRide = async (fee?: number) => {
     if (!activeRide) return;
 
-    const { error } = await supabase
-      .from('rides')
-      .update({
-        status: 'cancelled',
-        cancelled_at: new Date().toISOString(),
-        cancelled_by: 'rider',
-        cancellation_reason: 'Cancelled by rider',
-      })
-      .eq('id', activeRide.id);
+    try {
+      const { data, error } = await supabase.functions.invoke('handle-cancellation', {
+        body: {
+          ride_id: activeRide.id,
+          cancelled_by: 'rider',
+          user_id: user?.id,
+          reason: 'Cancelled by rider',
+        },
+      });
 
-    if (!error) {
+      if (error) throw error;
+
       setActiveRide(null);
-      toast({ title: 'Ride cancelled' });
+      setShowCancelDialog(false);
+      setIsSearching(false);
+
+      if (data?.cancellation_fee > 0) {
+        toast({ 
+          title: 'Ride cancelled', 
+          description: `Cancellation fee: ₹${data.cancellation_fee}` 
+        });
+      } else {
+        toast({ title: 'Ride cancelled' });
+      }
+    } catch (error) {
+      console.error('Cancel error:', error);
+      toast({ variant: 'destructive', title: 'Failed to cancel ride' });
     }
   };
 
@@ -339,8 +400,22 @@ const RiderHome = () => {
           </div>
         )}
 
+        {/* Searching indicator */}
+        {isSearching && (
+          <div className="absolute top-4 left-4 right-4 z-10">
+            <div className="bg-primary/90 text-primary-foreground px-4 py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-3">
+              <div className="flex gap-1">
+                <span className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <span className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <span className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+              <span>Searching for nearby captains...</span>
+            </div>
+          </div>
+        )}
+
         {/* Tracking indicator */}
-        {isTracking && (
+        {isTracking && !isSearching && (
           <div className="absolute top-4 left-4 right-4 z-10">
             <div className="bg-primary/90 text-primary-foreground px-4 py-2 rounded-full text-sm font-medium flex items-center justify-center gap-2">
               <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
@@ -361,7 +436,7 @@ const RiderHome = () => {
               pickupLng={activeRide.pickup.lng}
               dropLat={activeRide.drop.lat}
               dropLng={activeRide.drop.lng}
-              onCancel={handleCancelRide}
+              onCancel={() => setShowCancelDialog(true)}
               onSOS={handleSOS}
             />
           </div>
@@ -404,6 +479,15 @@ const RiderHome = () => {
         pickup={pickup}
         drop={drop}
         onRideBooked={handleRideBooked}
+      />
+
+      {/* Cancellation Dialog */}
+      <CancellationDialog
+        isOpen={showCancelDialog}
+        onClose={() => setShowCancelDialog(false)}
+        onConfirm={handleCancelRide}
+        rideStatus={activeRide?.status || 'pending'}
+        matchedAt={activeRide?.matchedAt || null}
       />
     </div>
   );

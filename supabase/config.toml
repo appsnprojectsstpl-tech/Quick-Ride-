@@ -11,3 +11,15 @@ verify_jwt = false
 
 [functions.match-captain]
 verify_jwt = false
+
+[functions.match-captain-v2]
+verify_jwt = false
+
+[functions.respond-to-offer]
+verify_jwt = false
+
+[functions.handle-reassignment]
+verify_jwt = false
+
+[functions.handle-cancellation]
+verify_jwt = false
