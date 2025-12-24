@@ -207,7 +207,35 @@ const RiderHome = () => {
           table: 'rides',
           filter: `rider_id=eq.${user.id}`,
         },
-        (payload) => {
+        async (payload) => {
+          const updatedRide = payload.new as any;
+          
+          // Auto-retry matching when ride goes back to pending after captain decline/cancel
+          if (updatedRide?.status === 'pending' && updatedRide?.excluded_captain_ids?.length > 0) {
+            console.log('[RiderHome] Ride reset to pending, auto-triggering re-match...');
+            toast({
+              title: 'Finding another captain...',
+              description: 'Previous captain unavailable. Searching for a new one.',
+            });
+            
+            // Auto-trigger re-matching
+            const { error } = await supabase.functions.invoke('match-captain-v2', {
+              body: {
+                ride_id: updatedRide.id,
+                pickup_lat: updatedRide.pickup_lat,
+                pickup_lng: updatedRide.pickup_lng,
+                vehicle_type: updatedRide.vehicle_type,
+                estimated_fare: updatedRide.final_fare,
+                estimated_distance_km: updatedRide.estimated_distance_km,
+                estimated_duration_mins: updatedRide.estimated_duration_mins,
+              },
+            });
+            
+            if (error) {
+              console.error('[RiderHome] Re-match error:', error);
+            }
+          }
+          
           fetchActiveRide();
         }
       )

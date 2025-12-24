@@ -1,6 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
+declare const EdgeRuntime: {
+  waitUntil: (promise: Promise<unknown>) => void
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -167,10 +171,38 @@ serve(async (req) => {
 
       // Check if we should find next captain
       if (excludedIds.length < maxOffers) {
-        // Trigger re-matching by calling match-captain-v2
-        console.log(`[respond-to-offer] Triggering re-match for ride ${ride.id} (${excludedIds.length}/${maxOffers} captains tried)`)
+        // Trigger re-matching automatically using EdgeRuntime.waitUntil for background task
+        console.log(`[respond-to-offer] Triggering background re-match for ride ${ride.id} (${excludedIds.length}/${maxOffers} captains tried)`)
         
-        // The frontend will handle re-triggering the match based on ride status change
+        // Use waitUntil to not block response
+        EdgeRuntime.waitUntil((async () => {
+          try {
+            // Small delay to let DB updates propagate
+            await new Promise(resolve => setTimeout(resolve, 500))
+            
+            const response = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/match-captain-v2`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+              },
+              body: JSON.stringify({
+                ride_id: ride.id,
+                pickup_lat: ride.pickup_lat,
+                pickup_lng: ride.pickup_lng,
+                vehicle_type: ride.vehicle_type,
+                estimated_fare: ride.final_fare || 0,
+                estimated_distance_km: ride.estimated_distance_km || 5,
+                estimated_duration_mins: ride.estimated_duration_mins || 15,
+              }),
+            })
+            
+            const result = await response.json()
+            console.log(`[respond-to-offer] Background re-match result:`, result)
+          } catch (e) {
+            console.error('[respond-to-offer] Background re-match failed:', e)
+          }
+        })())
       }
 
       return new Response(
