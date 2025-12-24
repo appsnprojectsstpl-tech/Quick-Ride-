@@ -11,7 +11,7 @@ serve(async (req) => {
   }
 
   try {
-    const apiKey = Deno.env.get('GOOGLE_MAPS_API_KEY')
+    const apiKey = Deno.env.get('GOOGLE_MAPS_API_KEY')?.trim()
     
     if (!apiKey) {
       throw new Error('Google Maps API key not configured')
