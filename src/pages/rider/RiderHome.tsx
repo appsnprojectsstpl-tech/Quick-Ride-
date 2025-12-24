@@ -1,9 +1,11 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Menu, Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import GoogleMapView from '@/components/maps/GoogleMapView';
-import LocationSearch from '@/components/rider/LocationSearch';
-import RideBookingSheet from '@/components/rider/RideBookingSheet';
+import LocationPanel from '@/components/rider/LocationPanel';
+import VehicleOptionsSheet from '@/components/rider/VehicleOptionsSheet';
+import ConfirmRideSheet from '@/components/rider/ConfirmRideSheet';
+import SearchingCaptainView from '@/components/rider/SearchingCaptainView';
 import ActiveRideCard from '@/components/rider/ActiveRideCard';
 import CancellationDialog from '@/components/rider/CancellationDialog';
 import RideRatingDialog from '@/components/rider/RideRatingDialog';
@@ -13,15 +15,10 @@ import { useToast } from '@/hooks/use-toast';
 import { useRideNotifications } from '@/hooks/useRideNotifications';
 import { useCaptainTracking } from '@/hooks/useCaptainTracking';
 import { useDirections } from '@/hooks/useDirections';
+import { useBooking, VehicleType } from '@/contexts/BookingContext';
 import { Database } from '@/integrations/supabase/types';
 
 type RideStatus = Database['public']['Enums']['ride_status'];
-
-interface Location {
-  lat: number;
-  lng: number;
-  address: string;
-}
 
 interface ActiveRide {
   id: string;
@@ -42,25 +39,23 @@ interface ActiveRide {
     };
     eta_mins: number;
   } | null;
-  pickup: Location;
-  drop: Location;
+  pickup: { lat: number; lng: number; address: string };
+  drop: { lat: number; lng: number; address: string };
 }
 
 const RiderHome = () => {
-  const [pickup, setPickup] = useState<Location | null>(null);
-  const [drop, setDrop] = useState<Location | null>(null);
-  const [isBookingOpen, setIsBookingOpen] = useState(false);
+  const { state, dispatch } = useBooking();
   const [activeRide, setActiveRide] = useState<ActiveRide | null>(null);
   const [currentLocation, setCurrentLocation] = useState({ lat: 12.9716, lng: 77.5946 });
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [showRatingDialog, setShowRatingDialog] = useState(false);
   const [completedRideId, setCompletedRideId] = useState<string | null>(null);
   const [completedCaptainName, setCompletedCaptainName] = useState<string | undefined>(undefined);
-  const [isSearching, setIsSearching] = useState(false);
+  const [showVehicleOptions, setShowVehicleOptions] = useState(false);
+  const [showConfirmRide, setShowConfirmRide] = useState(false);
+  
   const { user, profile } = useAuth();
   const { toast } = useToast();
-
-  // Directions hook for route polyline
   const { routeInfo, fetchDirections, clearRoute } = useDirections();
 
   // Real-time ride notifications
@@ -68,18 +63,21 @@ const RiderHome = () => {
     userId: user?.id,
     role: 'rider',
     onStatusChange: (status, rideId) => {
-      console.log('Ride status changed:', status);
+      console.log('[RiderHome] Ride status changed:', status);
       if (status === 'pending') {
-        setIsSearching(true);
+        dispatch({ type: 'SET_STATUS', payload: 'SEARCHING_CAPTAIN' });
+      } else if (status === 'matched' || status === 'captain_arriving') {
+        dispatch({ type: 'SET_STATUS', payload: 'ASSIGNED' });
+      } else if (status === 'in_progress') {
+        dispatch({ type: 'SET_STATUS', payload: 'IN_PROGRESS' });
       } else if (status === 'completed') {
-        // Show rating dialog when ride completes
         setCompletedRideId(rideId);
         setCompletedCaptainName(activeRide?.captain?.name);
         setShowRatingDialog(true);
         setActiveRide(null);
-        setIsSearching(false);
-      } else {
-        setIsSearching(false);
+        dispatch({ type: 'RESET' });
+      } else if (status === 'cancelled') {
+        dispatch({ type: 'RESET' });
       }
     },
   });
@@ -93,17 +91,24 @@ const RiderHome = () => {
     enabled: !!shouldTrackCaptain,
   });
 
+  // Auto-show vehicle options when destination is selected
+  useEffect(() => {
+    if (state.status === 'DESTINATION_SELECTED' && state.pickupLocation && state.dropLocation) {
+      setShowVehicleOptions(true);
+    }
+  }, [state.status, state.pickupLocation, state.dropLocation]);
+
   // Fetch route when pickup and drop are set
   useEffect(() => {
-    if (pickup && drop) {
+    if (state.pickupLocation && state.dropLocation) {
       fetchDirections(
-        { lat: pickup.lat, lng: pickup.lng },
-        { lat: drop.lat, lng: drop.lng }
+        { lat: state.pickupLocation.lat, lng: state.pickupLocation.lng },
+        { lat: state.dropLocation.lat, lng: state.dropLocation.lng }
       );
     } else {
       clearRoute();
     }
-  }, [pickup, drop, fetchDirections, clearRoute]);
+  }, [state.pickupLocation, state.dropLocation, fetchDirections, clearRoute]);
 
   // Also fetch route for active rides
   useEffect(() => {
@@ -130,7 +135,7 @@ const RiderHome = () => {
     }
   }, []);
 
-  // Check for active rides
+  // Check for active rides and subscribe to updates
   useEffect(() => {
     if (!user) return;
 
@@ -155,9 +160,11 @@ const RiderHome = () => {
         let captainData = null;
 
         if (ride.status === 'pending') {
-          setIsSearching(true);
-        } else {
-          setIsSearching(false);
+          dispatch({ type: 'SET_STATUS', payload: 'SEARCHING_CAPTAIN' });
+        } else if (['matched', 'captain_arriving', 'waiting_for_rider'].includes(ride.status)) {
+          dispatch({ type: 'SET_STATUS', payload: 'ASSIGNED' });
+        } else if (ride.status === 'in_progress') {
+          dispatch({ type: 'SET_STATUS', payload: 'IN_PROGRESS' });
         }
 
         if (ride.captains) {
@@ -190,7 +197,6 @@ const RiderHome = () => {
         });
       } else {
         setActiveRide(null);
-        setIsSearching(false);
       }
     };
 
@@ -218,7 +224,6 @@ const RiderHome = () => {
               description: 'Previous captain unavailable. Searching for a new one.',
             });
             
-            // Auto-trigger re-matching
             const { error } = await supabase.functions.invoke('match-captain-v2', {
               body: {
                 ride_id: updatedRide.id,
@@ -247,18 +252,19 @@ const RiderHome = () => {
   }, [user]);
 
   const handleRideBooked = async (rideId: string) => {
-    setIsSearching(true);
+    dispatch({ type: 'SET_RIDE_ID', payload: rideId });
+    dispatch({ type: 'SET_STATUS', payload: 'SEARCHING_CAPTAIN' });
     
-    // Try to match with a captain using v2 matching engine
+    // Start captain matching
     const { data, error } = await supabase.functions.invoke('match-captain-v2', {
       body: {
         ride_id: rideId,
-        pickup_lat: pickup?.lat,
-        pickup_lng: pickup?.lng,
-        vehicle_type: 'bike',
-        estimated_fare: 50,
-        estimated_distance_km: routeInfo?.distance?.value ? routeInfo.distance.value / 1000 : 5,
-        estimated_duration_mins: routeInfo?.duration?.value ? Math.round(routeInfo.duration.value / 60) : 15,
+        pickup_lat: state.pickupLocation?.lat,
+        pickup_lng: state.pickupLocation?.lng,
+        vehicle_type: state.vehicleType,
+        estimated_fare: state.fare?.final_fare || 50,
+        estimated_distance_km: state.fare?.distance_km || 5,
+        estimated_duration_mins: state.fare?.duration_mins || 15,
       },
     });
 
@@ -269,7 +275,7 @@ const RiderHome = () => {
         title: 'Error finding captain',
         description: 'Please try again.',
       });
-      setIsSearching(false);
+      dispatch({ type: 'RESET' });
       return;
     }
 
@@ -283,14 +289,33 @@ const RiderHome = () => {
         title: 'Searching for captains...',
         description: 'Expanding search radius.',
       });
-      // The frontend will handle retry via realtime subscription
     } else {
       toast({
         title: 'No captains available',
         description: data?.message || 'Please try again later.',
       });
-      setIsSearching(false);
     }
+  };
+
+  const handleCancelSearch = async () => {
+    if (state.rideId) {
+      try {
+        const { error } = await supabase.functions.invoke('handle-cancellation', {
+          body: {
+            ride_id: state.rideId,
+            cancelled_by: 'rider',
+            user_id: user?.id,
+            reason: 'Cancelled during search',
+          },
+        });
+
+        if (error) throw error;
+      } catch (error) {
+        console.error('Cancel error:', error);
+      }
+    }
+    dispatch({ type: 'RESET' });
+    toast({ title: 'Search cancelled' });
   };
 
   const handleCancelRide = async (fee?: number) => {
@@ -310,7 +335,7 @@ const RiderHome = () => {
 
       setActiveRide(null);
       setShowCancelDialog(false);
-      setIsSearching(false);
+      dispatch({ type: 'RESET' });
 
       if (data?.cancellation_fee > 0) {
         toast({ 
@@ -345,12 +370,16 @@ const RiderHome = () => {
     }
   };
 
+  const handleVehicleSelect = (type: VehicleType) => {
+    setShowVehicleOptions(false);
+    setShowConfirmRide(true);
+  };
+
   // Build map markers with captain location
   const mapMarkers = useMemo(() => {
     const markers = [];
     
     if (activeRide) {
-      // Show pickup and drop for active ride
       markers.push({ 
         lat: activeRide.pickup.lat, 
         lng: activeRide.pickup.lng, 
@@ -364,7 +393,6 @@ const RiderHome = () => {
         icon: 'drop' as const 
       });
       
-      // Show live captain location
       if (captainLocation && shouldTrackCaptain) {
         markers.push({
           lat: captainLocation.lat,
@@ -374,15 +402,28 @@ const RiderHome = () => {
         });
       }
     } else {
-      // Show selected pickup and drop
-      if (pickup) markers.push({ lat: pickup.lat, lng: pickup.lng, title: 'Pickup', icon: 'pickup' as const });
-      if (drop) markers.push({ lat: drop.lat, lng: drop.lng, title: 'Drop', icon: 'drop' as const });
+      if (state.pickupLocation) {
+        markers.push({ 
+          lat: state.pickupLocation.lat, 
+          lng: state.pickupLocation.lng, 
+          title: 'Pickup', 
+          icon: 'pickup' as const 
+        });
+      }
+      if (state.dropLocation) {
+        markers.push({ 
+          lat: state.dropLocation.lat, 
+          lng: state.dropLocation.lng, 
+          title: 'Drop', 
+          icon: 'drop' as const 
+        });
+      }
     }
     
     return markers;
-  }, [activeRide, pickup, drop, captainLocation, shouldTrackCaptain]);
+  }, [activeRide, state.pickupLocation, state.dropLocation, captainLocation, shouldTrackCaptain]);
 
-  // Center map on captain when tracking
+  // Center map
   const mapCenter = useMemo(() => {
     if (captainLocation && shouldTrackCaptain) {
       return { lat: captainLocation.lat, lng: captainLocation.lng };
@@ -390,8 +431,16 @@ const RiderHome = () => {
     if (activeRide) {
       return { lat: activeRide.pickup.lat, lng: activeRide.pickup.lng };
     }
+    if (state.pickupLocation) {
+      return { lat: state.pickupLocation.lat, lng: state.pickupLocation.lng };
+    }
     return currentLocation;
-  }, [captainLocation, shouldTrackCaptain, activeRide, currentLocation]);
+  }, [captainLocation, shouldTrackCaptain, activeRide, state.pickupLocation, currentLocation]);
+
+  // Determine what UI to show based on booking status
+  const isSearching = state.status === 'SEARCHING_CAPTAIN';
+  const hasActiveRide = activeRide && ['matched', 'captain_arriving', 'waiting_for_rider', 'in_progress'].includes(activeRide.status);
+  const showLocationPanel = !isSearching && !hasActiveRide;
 
   return (
     <div className="h-screen flex flex-col">
@@ -421,7 +470,7 @@ const RiderHome = () => {
         />
 
         {/* Route info banner */}
-        {routeInfo && !activeRide && (
+        {routeInfo && !hasActiveRide && !isSearching && (
           <div className="absolute top-4 left-4 right-4 z-10">
             <div className="bg-card/95 backdrop-blur px-4 py-3 rounded-xl shadow-lg border border-border flex items-center justify-between">
               <div className="flex items-center gap-4">
@@ -439,20 +488,6 @@ const RiderHome = () => {
           </div>
         )}
 
-        {/* Searching indicator */}
-        {isSearching && (
-          <div className="absolute top-4 left-4 right-4 z-10">
-            <div className="bg-primary/90 text-primary-foreground px-4 py-3 rounded-xl text-sm font-medium flex items-center justify-center gap-3">
-              <div className="flex gap-1">
-                <span className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-2 h-2 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-              </div>
-              <span>Searching for nearby captains...</span>
-            </div>
-          </div>
-        )}
-
         {/* Tracking indicator */}
         {isTracking && !isSearching && (
           <div className="absolute top-4 left-4 right-4 z-10">
@@ -463,8 +498,15 @@ const RiderHome = () => {
           </div>
         )}
 
+        {/* Searching Captain View */}
+        {isSearching && (
+          <div className="absolute bottom-4 left-4 right-4 z-10">
+            <SearchingCaptainView onCancel={handleCancelSearch} />
+          </div>
+        )}
+
         {/* Active Ride Overlay */}
-        {activeRide && (
+        {hasActiveRide && (
           <div className="absolute bottom-4 left-4 right-4 z-10">
             <ActiveRideCard
               rideId={activeRide.id}
@@ -483,40 +525,23 @@ const RiderHome = () => {
       </div>
 
       {/* Location Input Panel */}
-      {!activeRide && (
+      {showLocationPanel && (
         <div className="absolute bottom-24 left-4 right-4 z-10">
-          <div className="bg-card rounded-2xl p-4 shadow-lg border border-border space-y-3">
-            <LocationSearch
-              placeholder="Pickup location"
-              onSelect={setPickup}
-              icon="pickup"
-            />
-            <LocationSearch
-              placeholder="Where to?"
-              onSelect={(loc) => {
-                setDrop(loc);
-                if (pickup) setIsBookingOpen(true);
-              }}
-              icon="drop"
-            />
-            {pickup && drop && (
-              <Button
-                onClick={() => setIsBookingOpen(true)}
-                className="w-full"
-              >
-                Find Rides
-              </Button>
-            )}
-          </div>
+          <LocationPanel />
         </div>
       )}
 
-      {/* Booking Sheet */}
-      <RideBookingSheet
-        isOpen={isBookingOpen}
-        onClose={() => setIsBookingOpen(false)}
-        pickup={pickup}
-        drop={drop}
+      {/* Vehicle Options Sheet */}
+      <VehicleOptionsSheet
+        isOpen={showVehicleOptions}
+        onClose={() => setShowVehicleOptions(false)}
+        onVehicleSelect={handleVehicleSelect}
+      />
+
+      {/* Confirm Ride Sheet */}
+      <ConfirmRideSheet
+        isOpen={showConfirmRide}
+        onClose={() => setShowConfirmRide(false)}
         onRideBooked={handleRideBooked}
       />
 
