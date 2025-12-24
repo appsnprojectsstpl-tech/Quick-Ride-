@@ -50,6 +50,7 @@ export const useRideNotifications = ({
     notifyRideCompleted,
     notifyRideCancelled,
     notifyRideRequest,
+    notifyReassignment,
   } = usePushNotifications();
 
   const showNotification = useCallback((status: RideStatus, rideData?: any) => {
@@ -95,7 +96,7 @@ export const useRideNotifications = ({
         }
       }
     }
-  }, [role, toast, permission, notifyRideAccepted, notifyCaptainArriving, notifyCaptainArrived, notifyRideStarted, notifyRideCompleted, notifyRideCancelled, notifyRideRequest]);
+  }, [role, toast, permission, notifyRideAccepted, notifyCaptainArriving, notifyCaptainArrived, notifyRideStarted, notifyRideCompleted, notifyRideCancelled, notifyRideRequest, notifyReassignment]);
 
   useEffect(() => {
     if (permission === 'default') {

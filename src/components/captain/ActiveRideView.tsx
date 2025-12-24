@@ -1,8 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
-import { Phone, Navigation, AlertTriangle, Volume2, VolumeX } from 'lucide-react';
+import { Phone, Navigation, AlertTriangle, Volume2, VolumeX, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useDirections } from '@/hooks/useDirections';
@@ -30,7 +38,17 @@ interface ActiveRideViewProps {
   captainLocation: { lat: number; lng: number } | null;
   onStatusUpdate: (status: string) => void;
   onRouteUpdate?: (decodedPath: Array<{ lat: number; lng: number }>) => void;
+  onCancelRide?: (reason: string) => void;
 }
+
+const CANCEL_REASONS = [
+  { id: 'rider_not_responding', label: 'Rider not responding' },
+  { id: 'wrong_location', label: 'Rider at wrong location' },
+  { id: 'waited_too_long', label: 'Waited too long' },
+  { id: 'vehicle_issue', label: 'Vehicle issue' },
+  { id: 'emergency', label: 'Personal emergency' },
+  { id: 'other', label: 'Other reason' },
+];
 
 const statusFlow = [
   { status: 'matched', label: 'Navigate to Pickup', nextStatus: 'captain_arriving' },
@@ -54,9 +72,13 @@ const ActiveRideView = ({
   captainLocation,
   onStatusUpdate,
   onRouteUpdate,
+  onCancelRide,
 }: ActiveRideViewProps) => {
   const [enteredOtp, setEnteredOtp] = useState('');
   const [isUpdating, setIsUpdating] = useState(false);
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [selectedCancelReason, setSelectedCancelReason] = useState<string | null>(null);
+  const [isCancelling, setIsCancelling] = useState(false);
   const { toast } = useToast();
   const { routeInfo, fetchDirections, lastUpdated } = useDirections({ 
     autoRefreshInterval: 30000,
@@ -189,7 +211,66 @@ const ActiveRideView = ({
     window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodedAddress}`, '_blank');
   };
 
+  const handleCancelWithReason = async () => {
+    if (!selectedCancelReason || !onCancelRide) return;
+    
+    setIsCancelling(true);
+    try {
+      await onCancelRide(selectedCancelReason);
+      setShowCancelDialog(false);
+    } finally {
+      setIsCancelling(false);
+      setSelectedCancelReason(null);
+    }
+  };
+
   return (
+    <>
+    {/* Cancel Ride Dialog */}
+    <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-destructive" />
+            Cancel Ride
+          </DialogTitle>
+          <DialogDescription>
+            Cancelling affects your acceptance rate. Please select a reason.
+          </DialogDescription>
+        </DialogHeader>
+        
+        <div className="grid grid-cols-1 gap-2 py-4">
+          {CANCEL_REASONS.map((reason) => (
+            <Button
+              key={reason.id}
+              variant={selectedCancelReason === reason.label ? 'default' : 'outline'}
+              className="justify-start"
+              onClick={() => setSelectedCancelReason(reason.label)}
+            >
+              {reason.label}
+            </Button>
+          ))}
+        </div>
+
+        <DialogFooter className="flex gap-2 sm:gap-0">
+          <Button 
+            variant="outline" 
+            onClick={() => setShowCancelDialog(false)}
+            className="flex-1"
+          >
+            Keep Ride
+          </Button>
+          <Button 
+            variant="destructive" 
+            onClick={handleCancelWithReason}
+            disabled={!selectedCancelReason || isCancelling}
+            className="flex-1"
+          >
+            {isCancelling ? 'Cancelling...' : 'Confirm Cancel'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
     <div className="bg-card rounded-2xl shadow-lg border border-border overflow-hidden">
       {/* Navigation Instructions */}
       {routeInfo && routeInfo.steps.length > 0 && (
@@ -311,17 +392,28 @@ const ActiveRideView = ({
         </div>
       )}
 
-      {/* SOS */}
-      <div className="px-4 pb-4">
+      {/* Bottom Actions */}
+      <div className="px-4 pb-4 flex gap-2">
+        {status !== 'in_progress' && onCancelRide && (
+          <Button
+            variant="outline"
+            className="flex-1 text-destructive hover:text-destructive hover:bg-destructive/10"
+            onClick={() => setShowCancelDialog(true)}
+          >
+            <X className="w-4 h-4 mr-2" />
+            Cancel Ride
+          </Button>
+        )}
         <Button
           variant="outline"
-          className="w-full sos-button"
+          className="flex-1 sos-button"
         >
           <AlertTriangle className="w-4 h-4 mr-2" />
-          SOS Emergency
+          SOS
         </Button>
       </div>
     </div>
+    </>
   );
 };
 

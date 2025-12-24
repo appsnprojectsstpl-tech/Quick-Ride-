@@ -6,6 +6,7 @@ import LocationSearch from '@/components/rider/LocationSearch';
 import RideBookingSheet from '@/components/rider/RideBookingSheet';
 import ActiveRideCard from '@/components/rider/ActiveRideCard';
 import CancellationDialog from '@/components/rider/CancellationDialog';
+import RideRatingDialog from '@/components/rider/RideRatingDialog';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
@@ -52,6 +53,9 @@ const RiderHome = () => {
   const [activeRide, setActiveRide] = useState<ActiveRide | null>(null);
   const [currentLocation, setCurrentLocation] = useState({ lat: 12.9716, lng: 77.5946 });
   const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [showRatingDialog, setShowRatingDialog] = useState(false);
+  const [completedRideId, setCompletedRideId] = useState<string | null>(null);
+  const [completedCaptainName, setCompletedCaptainName] = useState<string | undefined>(undefined);
   const [isSearching, setIsSearching] = useState(false);
   const { user, profile } = useAuth();
   const { toast } = useToast();
@@ -63,10 +67,17 @@ const RiderHome = () => {
   useRideNotifications({
     userId: user?.id,
     role: 'rider',
-    onStatusChange: (status) => {
+    onStatusChange: (status, rideId) => {
       console.log('Ride status changed:', status);
       if (status === 'pending') {
         setIsSearching(true);
+      } else if (status === 'completed') {
+        // Show rating dialog when ride completes
+        setCompletedRideId(rideId);
+        setCompletedCaptainName(activeRide?.captain?.name);
+        setShowRatingDialog(true);
+        setActiveRide(null);
+        setIsSearching(false);
       } else {
         setIsSearching(false);
       }
@@ -489,6 +500,22 @@ const RiderHome = () => {
         rideStatus={activeRide?.status || 'pending'}
         matchedAt={activeRide?.matchedAt || null}
       />
+
+      {/* Rating Dialog */}
+      {completedRideId && (
+        <RideRatingDialog
+          isOpen={showRatingDialog}
+          onClose={() => {
+            setShowRatingDialog(false);
+            setCompletedRideId(null);
+          }}
+          rideId={completedRideId}
+          captainName={completedCaptainName}
+          onRated={() => {
+            toast({ title: 'Thanks!', description: 'Your rating helps improve the service.' });
+          }}
+        />
+      )}
     </div>
   );
 };
