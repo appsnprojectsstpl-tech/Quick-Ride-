@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { BookingProvider } from '@/contexts/BookingContext';
 import RiderHome from './RiderHome';
 import RiderHistory from './RiderHistory';
 import RiderProfile from './RiderProfile';
@@ -10,7 +11,40 @@ import RiderNavBar from '@/components/rider/RiderNavBar';
 import { Loader2 } from 'lucide-react';
 
 const RiderApp = () => {
-  const { user, role, isLoading } = useAuth();
+  const { user, isLoading } = useAuth();
+  const navigate = useNavigate();
+
+  // Only redirect for protected routes (profile, history, etc.)
+  // Allow browsing and vehicle selection without auth
+  // Auth will be required at booking confirmation time
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  return (
+    <BookingProvider>
+      <div className="mobile-layout pb-20">
+        <Routes>
+          <Route path="/" element={<RiderHome />} />
+          <Route path="/history" element={<ProtectedRoute><RiderHistory /></ProtectedRoute>} />
+          <Route path="/profile" element={<ProtectedRoute><RiderProfile /></ProtectedRoute>} />
+          <Route path="/emergency-contacts" element={<ProtectedRoute><EmergencyContacts /></ProtectedRoute>} />
+          <Route path="/saved-places" element={<ProtectedRoute><SavedPlaces /></ProtectedRoute>} />
+        </Routes>
+        <RiderNavBar />
+      </div>
+    </BookingProvider>
+  );
+};
+
+// Protected route wrapper - redirects to auth if not logged in
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { user, isLoading } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -27,18 +61,11 @@ const RiderApp = () => {
     );
   }
 
-  return (
-    <div className="mobile-layout pb-20">
-      <Routes>
-        <Route path="/" element={<RiderHome />} />
-        <Route path="/history" element={<RiderHistory />} />
-        <Route path="/profile" element={<RiderProfile />} />
-        <Route path="/emergency-contacts" element={<EmergencyContacts />} />
-        <Route path="/saved-places" element={<SavedPlaces />} />
-      </Routes>
-      <RiderNavBar />
-    </div>
-  );
+  if (!user) {
+    return null;
+  }
+
+  return <>{children}</>;
 };
 
 export default RiderApp;

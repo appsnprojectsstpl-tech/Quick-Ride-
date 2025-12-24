@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useMemo } from 'react';
 import { GoogleMap, LoadScript, Marker, Polyline } from '@react-google-maps/api';
 import { useGoogleMapsApiKey } from '@/hooks/useGoogleMaps';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -46,6 +46,9 @@ const polylineOptions = {
   strokeOpacity: 0.8,
   strokeWeight: 4,
 };
+
+// Libraries array moved outside component to prevent reloads
+const GOOGLE_MAPS_LIBRARIES: ('places')[] = ['places'];
 
 // Decode Google's encoded polyline format
 const decodePolyline = (encoded: string): Array<{ lat: number; lng: number }> => {
@@ -101,6 +104,15 @@ const GoogleMapView = ({
     setMap(map);
   }, []);
 
+  // Memoize marker icons to prevent unnecessary re-renders
+  const markerIcons = useMemo(() => ({
+    captain: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png',
+    pickup: 'https://maps.google.com/mapfiles/ms/icons/green-dot.png',
+    drop: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png',
+    dropoff: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png',
+    default: undefined,
+  }), []);
+
   // Fit bounds when polyline or markers change
   useEffect(() => {
     if (!map) return;
@@ -140,7 +152,7 @@ const GoogleMapView = ({
 
   return (
     <div className={className}>
-      <LoadScript googleMapsApiKey={apiKey} libraries={['places']}>
+      <LoadScript googleMapsApiKey={apiKey} libraries={GOOGLE_MAPS_LIBRARIES}>
         <GoogleMap
           mapContainerStyle={mapContainerStyle}
           center={center}
@@ -160,17 +172,11 @@ const GoogleMapView = ({
 
           {/* Markers */}
           {markers.map((marker, index) => {
-            const iconUrl = marker.icon === 'captain' 
-              ? 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png'
-              : marker.icon === 'pickup'
-              ? 'https://maps.google.com/mapfiles/ms/icons/green-dot.png'
-              : marker.icon === 'drop' || marker.icon === 'dropoff'
-              ? 'https://maps.google.com/mapfiles/ms/icons/red-dot.png'
-              : undefined;
+            const iconUrl = marker.icon ? markerIcons[marker.icon] : undefined;
 
             return (
               <Marker
-                key={index}
+                key={`${marker.lat}-${marker.lng}-${index}`}
                 position={{ lat: marker.lat, lng: marker.lng }}
                 title={marker.title}
                 icon={iconUrl}
