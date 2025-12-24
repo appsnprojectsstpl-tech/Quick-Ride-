@@ -1,8 +1,47 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 interface UsePushNotificationsOptions {
   onPermissionChange?: (permission: NotificationPermission) => void;
 }
+
+// Sound utility for playing notification beeps
+const playNotificationSound = (type: 'success' | 'alert' | 'warning' = 'alert') => {
+  try {
+    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContext) return;
+    
+    const audioContext = new AudioContext();
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    // Different tones for different notification types
+    const frequencies = {
+      success: [600, 800],
+      alert: [800, 1000],
+      warning: [400, 400],
+    };
+    
+    const [freq1, freq2] = frequencies[type];
+    
+    oscillator.frequency.value = freq1;
+    oscillator.type = 'sine';
+    gainNode.gain.value = 0.2;
+    
+    oscillator.start();
+    setTimeout(() => {
+      oscillator.frequency.value = freq2;
+    }, 150);
+    setTimeout(() => {
+      oscillator.stop();
+      audioContext.close();
+    }, 300);
+  } catch (e) {
+    console.log('Audio not supported');
+  }
+};
 
 export const usePushNotifications = (options: UsePushNotificationsOptions = {}) => {
   const { onPermissionChange } = options;
@@ -56,8 +95,9 @@ export const usePushNotifications = (options: UsePushNotificationsOptions = {}) 
     }
   }, [isSupported, permission]);
 
-  // Ride-specific notifications
+  // Ride-specific notifications with sound
   const notifyRideRequest = useCallback((pickupAddress: string, fare: number) => {
+    playNotificationSound('alert');
     return showNotification('New Ride Request! 🚗', {
       body: `Pickup: ${pickupAddress}\nFare: ₹${fare}`,
       tag: 'ride-request',
@@ -66,6 +106,7 @@ export const usePushNotifications = (options: UsePushNotificationsOptions = {}) 
   }, [showNotification]);
 
   const notifyRideAccepted = useCallback((captainName: string, vehicleInfo: string) => {
+    playNotificationSound('success');
     return showNotification('Ride Accepted! ✅', {
       body: `${captainName} is on the way\n${vehicleInfo}`,
       tag: 'ride-accepted',
@@ -73,6 +114,7 @@ export const usePushNotifications = (options: UsePushNotificationsOptions = {}) 
   }, [showNotification]);
 
   const notifyCaptainArriving = useCallback((eta: string) => {
+    playNotificationSound('success');
     return showNotification('Captain is Arriving! 🚗', {
       body: `Your captain will arrive in ${eta}`,
       tag: 'captain-arriving',
@@ -80,6 +122,7 @@ export const usePushNotifications = (options: UsePushNotificationsOptions = {}) 
   }, [showNotification]);
 
   const notifyCaptainArrived = useCallback(() => {
+    playNotificationSound('alert');
     return showNotification('Captain has Arrived! 📍', {
       body: 'Your captain is waiting at the pickup location',
       tag: 'captain-arrived',
@@ -88,6 +131,7 @@ export const usePushNotifications = (options: UsePushNotificationsOptions = {}) 
   }, [showNotification]);
 
   const notifyRideStarted = useCallback((destination: string) => {
+    playNotificationSound('success');
     return showNotification('Ride Started! 🎉', {
       body: `On the way to ${destination}`,
       tag: 'ride-started',
@@ -95,6 +139,7 @@ export const usePushNotifications = (options: UsePushNotificationsOptions = {}) 
   }, [showNotification]);
 
   const notifyRideCompleted = useCallback((fare: number) => {
+    playNotificationSound('success');
     return showNotification('Ride Completed! 🏁', {
       body: `Total fare: ₹${fare}\nThank you for riding with us!`,
       tag: 'ride-completed',
@@ -102,9 +147,19 @@ export const usePushNotifications = (options: UsePushNotificationsOptions = {}) 
   }, [showNotification]);
 
   const notifyRideCancelled = useCallback((reason?: string) => {
+    playNotificationSound('warning');
     return showNotification('Ride Cancelled ❌', {
       body: reason || 'Your ride has been cancelled',
       tag: 'ride-cancelled',
+    });
+  }, [showNotification]);
+
+  const notifyReassignment = useCallback(() => {
+    playNotificationSound('alert');
+    return showNotification('Finding New Captain 🔄', {
+      body: 'Your previous captain cancelled. We\'re finding a new one.',
+      tag: 'reassignment',
+      requireInteraction: true,
     });
   }, [showNotification]);
 
@@ -113,6 +168,7 @@ export const usePushNotifications = (options: UsePushNotificationsOptions = {}) 
     permission,
     requestPermission,
     showNotification,
+    playNotificationSound,
     notifyRideRequest,
     notifyRideAccepted,
     notifyCaptainArriving,
@@ -120,5 +176,6 @@ export const usePushNotifications = (options: UsePushNotificationsOptions = {}) 
     notifyRideStarted,
     notifyRideCompleted,
     notifyRideCancelled,
+    notifyReassignment,
   };
 };

@@ -379,6 +379,7 @@ const CaptainHome = ({ captain }: CaptainHomeProps) => {
               captainLocation={currentLocation}
               onStatusUpdate={handleStatusUpdate}
               onRouteUpdate={handleRouteUpdate}
+              onCancelRide={handleCancelRide}
             />
           </div>
         )}
