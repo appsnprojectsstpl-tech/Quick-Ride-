@@ -1,10 +1,30 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+// Restrict CORS to allowed origins
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('Origin') || '';
+  const allowedPatterns = [
+    /^https:\/\/.*\.lovableproject\.com$/,
+    /^https:\/\/.*\.lovable\.app$/,
+    /^capacitor:\/\/localhost$/,
+    /^http:\/\/localhost:\d+$/,
+  ];
+  
+  const isAllowed = allowedPatterns.some(pattern => pattern.test(origin));
+  
+  return {
+    'Access-Control-Allow-Origin': isAllowed ? origin : 'https://lovable.app',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  };
+}
+
+// Sanitize error messages for client responses
+function sanitizeError(error: unknown): string {
+  // Return generic message to client, log detailed error server-side
+  console.error('[send-notification] Internal error:', error);
+  return 'An error occurred while processing your request';
+}
 
 interface NotificationPayload {
   user_ids: string[];
@@ -15,17 +35,63 @@ interface NotificationPayload {
 }
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+  
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    // AUTHENTICATION CHECK
+    // This function should only be called by other edge functions using the service role key
+    const authHeader = req.headers.get('Authorization');
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    
+    // Validate that the request is coming from an internal service using service role key
+    const isServiceRole = authHeader === `Bearer ${serviceKey}`;
+    
+    if (!isServiceRole) {
+      // For non-service calls, validate JWT and check admin role
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+      
+      const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey, {
+        global: { headers: { Authorization: authHeader || '' } }
+      });
+      
+      const { data: { user }, error: authError } = await supabaseAuth.auth.getUser();
+      
+      if (authError || !user) {
+        console.log('[send-notification] Authentication failed:', authError?.message);
+        return new Response(
+          JSON.stringify({ error: 'Authentication required' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      // Only admins can send notifications via direct API call
+      const { data: roleData } = await supabaseAuth
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', user.id)
+        .eq('role', 'admin')
+        .single();
+        
+      if (!roleData) {
+        console.log('[send-notification] Admin access denied for user:', user.id);
+        return new Response(
+          JSON.stringify({ error: 'Admin access required' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
     const firebaseServerKey = Deno.env.get('FIREBASE_SERVER_KEY');
     if (!firebaseServerKey) {
       console.error('FIREBASE_SERVER_KEY not configured');
       return new Response(
-        JSON.stringify({ error: 'Firebase not configured' }),
+        JSON.stringify({ error: 'Service temporarily unavailable' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -56,7 +122,7 @@ serve(async (req) => {
     if (tokensError) {
       console.error('Error fetching tokens:', tokensError);
       return new Response(
-        JSON.stringify({ error: 'Failed to fetch device tokens' }),
+        JSON.stringify({ error: 'Failed to process notification' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -134,11 +200,9 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error('Error in send-notification:', error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return new Response(
-      JSON.stringify({ error: errorMessage }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      JSON.stringify({ error: sanitizeError(error) }),
+      { status: 500, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
     );
   }
 });
