@@ -1,17 +1,32 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { z } from 'https://deno.land/x/zod@v3.22.4/mod.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-interface CancellationRequest {
-  ride_id: string
-  cancelled_by: 'rider' | 'captain'
-  user_id: string
-  captain_id?: string
-  reason?: string
+// Input validation schema
+const CancellationRequestSchema = z.object({
+  ride_id: z.string().uuid(),
+  cancelled_by: z.enum(['rider', 'captain']),
+  user_id: z.string().uuid(),
+  captain_id: z.string().uuid().optional(),
+  reason: z.string().max(500).optional(),
+})
+
+// Sanitize error for client response
+function sanitizeError(error: unknown): string {
+  console.error('[handle-cancellation] Error:', error)
+  if (error instanceof z.ZodError) {
+    return 'Invalid request parameters'
+  }
+  if (error instanceof Error) {
+    if (error.message.includes('not found')) return 'Ride not found'
+    if (error.message.includes('Cannot cancel')) return error.message
+  }
+  return 'An error occurred processing your request'
 }
 
 serve(async (req) => {
@@ -25,11 +40,13 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    const { ride_id, cancelled_by, user_id, captain_id, reason }: CancellationRequest = await req.json()
+    // Validate input
+    const rawInput = await req.json()
+    const input = CancellationRequestSchema.parse(rawInput)
+    const { ride_id, cancelled_by, user_id, captain_id, reason } = input
 
     console.log(`[handle-cancellation] Processing cancellation for ride ${ride_id} by ${cancelled_by}`)
 
-    // Get ride details
     const { data: ride, error: rideError } = await supabase
       .from('rides')
       .select('*')
@@ -43,26 +60,23 @@ serve(async (req) => {
       )
     }
 
-    // Check if ride can be cancelled
     const cancellableStatuses = ['pending', 'matched', 'captain_arriving', 'waiting_for_rider']
     if (!cancellableStatuses.includes(ride.status)) {
       return new Response(
         JSON.stringify({ 
           success: false, 
-          error: `Cannot cancel ride in status: ${ride.status}` 
+          error: 'Cannot cancel ride at this stage' 
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
       )
     }
 
-    // Calculate time since match
     const matchedAt = ride.matched_at ? new Date(ride.matched_at) : null
     const now = new Date()
     const secondsSinceMatch = matchedAt 
       ? Math.floor((now.getTime() - matchedAt.getTime()) / 1000) 
       : 0
 
-    // Get applicable penalty
     const { data: penalties } = await supabase
       .from('cancellation_penalties')
       .select('*')
@@ -72,7 +86,6 @@ serve(async (req) => {
       .or(`city.eq.default,city.eq.${ride.city || 'default'}`)
       .order('city', { ascending: false })
 
-    // Find matching penalty based on time
     let applicablePenalty = null
     for (const penalty of penalties || []) {
       const minTime = penalty.min_time_after_match_seconds || 0
@@ -87,9 +100,8 @@ serve(async (req) => {
     const cancellationFee = applicablePenalty?.penalty_amount || 0
     const penaltyType = applicablePenalty?.penalty_type || 'fee'
 
-    console.log(`[handle-cancellation] Time since match: ${secondsSinceMatch}s, Fee: ${cancellationFee}, Type: ${penaltyType}`)
+    console.log(`[handle-cancellation] Time since match: ${secondsSinceMatch}s, Fee: ${cancellationFee}`)
 
-    // Update ride as cancelled
     await supabase
       .from('rides')
       .update({
@@ -102,17 +114,14 @@ serve(async (req) => {
       })
       .eq('id', ride_id)
 
-    // Handle captain-specific actions
     if (cancelled_by === 'captain' && (captain_id || ride.captain_id)) {
       const captId = captain_id || ride.captain_id
 
-      // Reset captain to online
       await supabase
         .from('captains')
         .update({ status: 'online' })
         .eq('id', captId)
 
-      // Update captain metrics
       const { data: metrics } = await supabase
         .from('captain_metrics')
         .select('*')
@@ -122,13 +131,11 @@ serve(async (req) => {
       const dailyCancelCount = (metrics?.daily_cancellation_count || 0) + 1
       const totalCancelled = (metrics?.total_rides_cancelled || 0) + 1
 
-      // Apply cooldown if excessive cancellations
       let cooldownUntil = null
       if (dailyCancelCount >= 3 && penaltyType === 'cooldown') {
         const cooldownMinutes = applicablePenalty?.cooldown_minutes || 30
         cooldownUntil = new Date(Date.now() + cooldownMinutes * 60 * 1000).toISOString()
         
-        // Also set captain offline
         await supabase
           .from('captains')
           .update({ status: 'offline' })
@@ -147,14 +154,12 @@ serve(async (req) => {
         })
         .eq('captain_id', captId)
     } else if (cancelled_by === 'rider' && ride.captain_id) {
-      // Reset captain to online if rider cancelled
       await supabase
         .from('captains')
         .update({ status: 'online' })
         .eq('id', ride.captain_id)
     }
 
-    // Expire any pending offers
     await supabase
       .from('ride_offers')
       .update({
@@ -171,7 +176,6 @@ serve(async (req) => {
       let notifyBody = ''
 
       if (cancelled_by === 'rider' && ride.captain_id) {
-        // Notify captain that rider cancelled
         const { data: captainData } = await supabase
           .from('captains')
           .select('user_id')
@@ -184,7 +188,6 @@ serve(async (req) => {
           notifyBody = reason || 'The rider has cancelled this ride'
         }
       } else if (cancelled_by === 'captain' && ride.rider_id) {
-        // Notify rider that captain cancelled
         notifyUserIds = [ride.rider_id]
         notifyTitle = '🔄 Finding New Captain'
         notifyBody = 'Your captain cancelled. We\'re finding you a new one.'
@@ -230,10 +233,8 @@ serve(async (req) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error'
-    console.error('[handle-cancellation] Error:', message)
     return new Response(
-      JSON.stringify({ error: message }),
+      JSON.stringify({ error: sanitizeError(error) }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
     )
   }
