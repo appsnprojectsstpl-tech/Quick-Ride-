@@ -50,15 +50,10 @@ const CaptainApp = () => {
   }, [user, isSupported, permission, requestPermission]);
 
   useEffect(() => {
-    if (!isLoading) {
-      if (!user) {
-        navigate('/auth');
-      } else if (role !== 'captain') {
-        // Non-captain users are redirected to home
-        navigate('/');
-      }
+    if (!isLoading && !user) {
+      navigate('/auth');
     }
-  }, [user, role, isLoading, navigate]);
+  }, [user, isLoading, navigate]);
 
   useEffect(() => {
     if (user) {
@@ -83,11 +78,6 @@ const CaptainApp = () => {
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
     );
-  }
-
-  // Additional guard: don't render captain content for non-captains
-  if (role !== 'captain') {
-    return null;
   }
 
   // If captain not verified, show KYC flow

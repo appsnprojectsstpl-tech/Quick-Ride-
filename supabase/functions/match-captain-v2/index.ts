@@ -1,45 +1,20 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { z } from 'https://deno.land/x/zod@v3.22.4/mod.ts'
 
-// Dynamic CORS based on origin
-function getCorsHeaders(req: Request) {
-  const origin = req.headers.get('origin') || '';
-  const allowedPatterns = [
-    /^https:\/\/.*\.lovableproject\.com$/,
-    /^https:\/\/.*\.lovable\.app$/,
-    /^capacitor:\/\/localhost$/,
-    /^http:\/\/localhost:\d+$/
-  ];
-  
-  const isAllowed = allowedPatterns.some(pattern => pattern.test(origin));
-  
-  return {
-    'Access-Control-Allow-Origin': isAllowed ? origin : 'https://lovable.app',
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    'Access-Control-Allow-Credentials': 'true',
-  };
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// Input validation schema
-const MatchRequestSchema = z.object({
-  ride_id: z.string().uuid(),
-  pickup_lat: z.number().min(-90).max(90),
-  pickup_lng: z.number().min(-180).max(180),
-  vehicle_type: z.enum(['bike', 'auto', 'cab']),
-  city: z.string().max(100).optional().default('default'),
-  estimated_fare: z.number().nonnegative().optional().default(0),
-  estimated_distance_km: z.number().nonnegative().optional().default(0),
-  estimated_duration_mins: z.number().nonnegative().optional().default(0),
-})
-
-// Sanitize error for client response - generic messages only
-function sanitizeError(error: unknown): string {
-  console.error('[match-captain-v2] Error:', error)
-  if (error instanceof z.ZodError) {
-    return 'Invalid request parameters'
-  }
-  return 'Unable to process request. Please try again.'
+interface MatchRequest {
+  ride_id: string
+  pickup_lat: number
+  pickup_lng: number
+  vehicle_type: 'bike' | 'auto' | 'cab'
+  city?: string
+  estimated_fare?: number
+  estimated_distance_km?: number
+  estimated_duration_mins?: number
 }
 
 interface CaptainCandidate {
@@ -57,8 +32,9 @@ interface CaptainCandidate {
   score: number
 }
 
+// Haversine distance calculation
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371
+  const R = 6371 // Earth's radius in km
   const dLat = (lat2 - lat1) * Math.PI / 180
   const dLon = (lon2 - lon1) * Math.PI / 180
   const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
@@ -68,17 +44,20 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c
 }
 
+// Multi-factor scoring algorithm
 function calculateCaptainScore(
   captain: any,
   metrics: any,
   config: any,
   maxDistance: number
 ): number {
+  // Normalize values to 0-1 scale
   const etaScore = 1 - Math.min(captain.distance_km / maxDistance, 1)
   const acceptanceScore = (metrics?.acceptance_rate || 100) / 100
   const ratingScore = (captain.rating || 5) / 5
   const cancellationScore = 1 - ((metrics?.cancellation_rate || 0) / 100)
 
+  // Apply weights from config
   const score = 
     etaScore * (config.score_weight_eta || 0.40) +
     acceptanceScore * (config.score_weight_acceptance || 0.25) +
@@ -89,8 +68,6 @@ function calculateCaptainScore(
 }
 
 serve(async (req) => {
-  const corsHeaders = getCorsHeaders(req);
-  
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
@@ -101,12 +78,20 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    const rawInput = await req.json()
-    const input = MatchRequestSchema.parse(rawInput)
-    const { ride_id, pickup_lat, pickup_lng, vehicle_type, city, estimated_fare, estimated_distance_km, estimated_duration_mins } = input
+    const { 
+      ride_id, 
+      pickup_lat, 
+      pickup_lng, 
+      vehicle_type, 
+      city = 'default',
+      estimated_fare = 0,
+      estimated_distance_km = 0,
+      estimated_duration_mins = 0
+    }: MatchRequest = await req.json()
 
     console.log(`[match-captain-v2] Starting match for ride ${ride_id}`)
 
+    // Get ride details to check excluded captains and current radius
     const { data: ride, error: rideError } = await supabase
       .from('rides')
       .select('excluded_captain_ids, current_radius_km, matching_attempts')
@@ -114,17 +99,14 @@ serve(async (req) => {
       .single()
 
     if (rideError) {
-      console.error('[match-captain-v2] Ride not found:', rideError)
-      return new Response(
-        JSON.stringify({ matched: false, error: 'Unable to process request' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
-      )
+      throw new Error(`Failed to fetch ride: ${rideError.message}`)
     }
 
     const excludedCaptainIds = ride?.excluded_captain_ids || []
     let currentRadius = ride?.current_radius_km || 1.5
     const matchingAttempts = (ride?.matching_attempts || 0) + 1
 
+    // Get matching config for city
     const { data: config } = await supabase
       .from('matching_config')
       .select('*')
@@ -146,6 +128,7 @@ serve(async (req) => {
       score_weight_cancellation: 0.15
     }
 
+    // Expand radius if this is a retry
     if (matchingAttempts > 1) {
       currentRadius = Math.min(
         currentRadius + matchConfig.radius_expansion_step_km,
@@ -154,6 +137,7 @@ serve(async (req) => {
       console.log(`[match-captain-v2] Expanding radius to ${currentRadius}km (attempt ${matchingAttempts})`)
     }
 
+    // Find online, verified captains with matching vehicle type
     const { data: vehicles, error: vehiclesError } = await supabase
       .from('vehicles')
       .select(`
@@ -176,13 +160,10 @@ serve(async (req) => {
       .eq('is_active', true)
 
     if (vehiclesError) {
-      console.error('[match-captain-v2] Failed to fetch vehicles:', vehiclesError)
-      return new Response(
-        JSON.stringify({ matched: false, error: 'Unable to process request' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
-      )
+      throw new Error(`Failed to fetch vehicles: ${vehiclesError.message}`)
     }
 
+    // Get captain metrics for scoring
     const captainIds = vehicles?.map((v: any) => v.captain_id) || []
     const { data: allMetrics } = await supabase
       .from('captain_metrics')
@@ -191,17 +172,21 @@ serve(async (req) => {
 
     const metricsMap = new Map((allMetrics || []).map((m: any) => [m.captain_id, m]))
 
+    // Filter and score captains
     const now = new Date()
     const candidates: CaptainCandidate[] = (vehicles || [])
       .filter((v: any) => {
         const captain = v.captains
+        // Check basic eligibility
         if (captain?.status !== 'online') return false
         if (captain?.is_verified !== true) return false
         if (!captain?.current_lat || !captain?.current_lng) return false
         if (excludedCaptainIds.includes(captain.id)) return false
 
+        // Check cooldown
         const metrics = metricsMap.get(captain.id)
         if (metrics?.cooldown_until && new Date(metrics.cooldown_until) > now) {
+          console.log(`[match-captain-v2] Captain ${captain.id} is in cooldown`)
           return false
         }
 
@@ -220,7 +205,7 @@ serve(async (req) => {
           vehicle_model: v.model,
           registration_number: v.registration_number,
           distance_km: distance,
-          eta_mins: Math.round(distance * 3),
+          eta_mins: Math.round(distance * 3), // Rough ETA: 3 mins per km
           rating: captain.rating || 5,
           acceptance_rate: metrics?.acceptance_rate || 100,
           cancellation_rate: metrics?.cancellation_rate || 0,
@@ -229,18 +214,24 @@ serve(async (req) => {
       })
       .filter((c: CaptainCandidate) => c.distance_km <= currentRadius)
 
+    // Calculate scores
     candidates.forEach(candidate => {
       const metrics = metricsMap.get(candidate.captain_id)
       candidate.score = calculateCaptainScore(candidate, metrics, matchConfig, currentRadius)
     })
 
+    // Sort by score descending
     candidates.sort((a, b) => b.score - a.score)
+
+    // Take top N
     const topCandidates = candidates.slice(0, matchConfig.max_offers_per_ride)
 
     console.log(`[match-captain-v2] Found ${candidates.length} candidates, selected top ${topCandidates.length}`)
 
     if (topCandidates.length === 0) {
+      // No captains found, check if we can expand radius
       if (currentRadius < matchConfig.max_radius_km) {
+        // Update ride for retry
         await supabase
           .from('rides')
           .update({
@@ -271,10 +262,14 @@ serve(async (req) => {
       )
     }
 
+    // Select the best captain (first in sorted list)
     const selectedCaptain = topCandidates[0]
     const offerExpiresAt = new Date(Date.now() + matchConfig.offer_timeout_seconds * 1000)
+
+    // Calculate estimated earnings (80% of fare after platform fee)
     const estimatedEarnings = Math.round(estimated_fare * 0.80)
 
+    // Create offer record
     const { data: offer, error: offerError } = await supabase
       .from('ride_offers')
       .insert({
@@ -293,6 +288,7 @@ serve(async (req) => {
       console.error('[match-captain-v2] Failed to create offer:', offerError)
     }
 
+    // Send push notification to captain
     try {
       const { data: rideDetails } = await supabase
         .from('rides')
@@ -323,6 +319,7 @@ serve(async (req) => {
       console.error('[match-captain-v2] Failed to send push notification:', notifError)
     }
 
+    // Update captain metrics - increment offers received
     await supabase
       .from('captain_metrics')
       .update({ 
@@ -330,8 +327,10 @@ serve(async (req) => {
       })
       .eq('captain_id', selectedCaptain.captain_id)
 
+    // Generate OTP for ride verification
     const otp = Math.floor(1000 + Math.random() * 9000).toString()
 
+    // Update ride with offer info
     await supabase
       .from('rides')
       .update({
@@ -346,11 +345,13 @@ serve(async (req) => {
       })
       .eq('id', ride_id)
 
+    // Update captain status to on_ride
     await supabase
       .from('captains')
       .update({ status: 'on_ride' })
       .eq('id', selectedCaptain.captain_id)
 
+    // Get captain profile for response
     const { data: profile } = await supabase
       .from('profiles')
       .select('name, phone, avatar_url')
@@ -391,9 +392,10 @@ serve(async (req) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   } catch (error) {
-    const corsHeaders = getCorsHeaders(req);
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    console.error('[match-captain-v2] Error:', message)
     return new Response(
-      JSON.stringify({ error: sanitizeError(error) }),
+      JSON.stringify({ error: message }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
     )
   }

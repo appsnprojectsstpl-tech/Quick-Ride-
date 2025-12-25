@@ -16,15 +16,10 @@ const AdminDashboard = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!isLoading) {
-      if (!user) {
-        navigate('/auth');
-      } else if (role !== 'admin') {
-        // Non-admin users are redirected to home
-        navigate('/');
-      }
+    if (!isLoading && !user) {
+      navigate('/auth');
     }
-  }, [user, role, isLoading, navigate]);
+  }, [user, isLoading, navigate]);
 
   if (isLoading) {
     return (
@@ -32,11 +27,6 @@ const AdminDashboard = () => {
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
       </div>
     );
-  }
-
-  // Additional guard: don't render admin content for non-admins
-  if (role !== 'admin') {
-    return null;
   }
 
   return (

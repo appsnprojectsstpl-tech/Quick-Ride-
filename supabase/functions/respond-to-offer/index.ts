@@ -1,50 +1,23 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { z } from 'https://deno.land/x/zod@v3.22.4/mod.ts'
 
 declare const EdgeRuntime: {
   waitUntil: (promise: Promise<unknown>) => void
 }
 
-// Dynamic CORS based on origin
-function getCorsHeaders(req: Request) {
-  const origin = req.headers.get('origin') || '';
-  const allowedPatterns = [
-    /^https:\/\/.*\.lovableproject\.com$/,
-    /^https:\/\/.*\.lovable\.app$/,
-    /^capacitor:\/\/localhost$/,
-    /^http:\/\/localhost:\d+$/
-  ];
-  
-  const isAllowed = allowedPatterns.some(pattern => pattern.test(origin));
-  
-  return {
-    'Access-Control-Allow-Origin': isAllowed ? origin : 'https://lovable.app',
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    'Access-Control-Allow-Credentials': 'true',
-  };
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// Input validation schema
-const RespondRequestSchema = z.object({
-  offer_id: z.string().uuid(),
-  captain_id: z.string().uuid(),
-  response: z.enum(['accept', 'decline']),
-  decline_reason: z.string().max(500).optional(),
-})
-
-// Sanitize error for client response - generic messages only
-function sanitizeError(error: unknown): string {
-  console.error('[respond-to-offer] Error:', error)
-  if (error instanceof z.ZodError) {
-    return 'Invalid request parameters'
-  }
-  return 'Unable to process request. Please try again.'
+interface RespondRequest {
+  offer_id: string
+  captain_id: string
+  response: 'accept' | 'decline'
+  decline_reason?: string
 }
 
 serve(async (req) => {
-  const corsHeaders = getCorsHeaders(req);
-  
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
@@ -55,12 +28,11 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    const rawInput = await req.json()
-    const input = RespondRequestSchema.parse(rawInput)
-    const { offer_id, captain_id, response, decline_reason } = input
+    const { offer_id, captain_id, response, decline_reason }: RespondRequest = await req.json()
 
     console.log(`[respond-to-offer] Captain ${captain_id} responding ${response} to offer ${offer_id}`)
 
+    // Get the offer
     const { data: offer, error: offerError } = await supabase
       .from('ride_offers')
       .select('*, rides!inner(*)')
@@ -69,33 +41,37 @@ serve(async (req) => {
 
     if (offerError || !offer) {
       return new Response(
-        JSON.stringify({ success: false, error: 'Unable to process request' }),
+        JSON.stringify({ success: false, error: 'Offer not found' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 404 }
       )
     }
 
+    // Verify captain matches
     if (offer.captain_id !== captain_id) {
       return new Response(
-        JSON.stringify({ success: false, error: 'Unauthorized' }),
+        JSON.stringify({ success: false, error: 'Offer not assigned to this captain' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 403 }
       )
     }
 
+    // Check if offer already responded to
     if (offer.response_status !== 'pending') {
       return new Response(
-        JSON.stringify({ success: false, error: 'Unable to process request' }),
+        JSON.stringify({ success: false, error: 'Offer already responded to', status: offer.response_status }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
       )
     }
 
+    // Check if offer expired
     if (new Date(offer.expires_at) < new Date()) {
+      // Mark as expired
       await supabase
         .from('ride_offers')
         .update({ response_status: 'expired', responded_at: new Date().toISOString() })
         .eq('id', offer_id)
 
       return new Response(
-        JSON.stringify({ success: false, error: 'Unable to process request' }),
+        JSON.stringify({ success: false, error: 'Offer has expired' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
       )
     }
@@ -103,6 +79,7 @@ serve(async (req) => {
     const ride = offer.rides
 
     if (response === 'accept') {
+      // Update offer as accepted
       await supabase
         .from('ride_offers')
         .update({
@@ -111,6 +88,7 @@ serve(async (req) => {
         })
         .eq('id', offer_id)
 
+      // Update ride status
       await supabase
         .from('rides')
         .update({
@@ -120,11 +98,13 @@ serve(async (req) => {
         })
         .eq('id', ride.id)
 
+      // Update captain status
       await supabase
         .from('captains')
         .update({ status: 'on_ride' })
         .eq('id', captain_id)
 
+      // Get captain profile for notification
       const { data: captainData } = await supabase
         .from('captains')
         .select('user_id, rating')
@@ -144,6 +124,7 @@ serve(async (req) => {
         .eq('is_active', true)
         .single()
 
+      // Send push notification to rider
       if (ride.rider_id) {
         try {
           await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/send-notification`, {
@@ -191,6 +172,7 @@ serve(async (req) => {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     } else {
+      // Decline the offer
       await supabase
         .from('ride_offers')
         .update({
@@ -200,14 +182,17 @@ serve(async (req) => {
         })
         .eq('id', offer_id)
 
+      // Add captain to excluded list
       const excludedIds = ride.excluded_captain_ids || []
       excludedIds.push(captain_id)
 
+      // Reset captain status to online
       await supabase
         .from('captains')
         .update({ status: 'online' })
         .eq('id', captain_id)
 
+      // Update ride to trigger re-matching
       await supabase
         .from('rides')
         .update({
@@ -219,8 +204,9 @@ serve(async (req) => {
         })
         .eq('id', ride.id)
 
-      console.log(`[respond-to-offer] Captain ${captain_id} declined ride ${ride.id}`)
+      console.log(`[respond-to-offer] Captain ${captain_id} declined ride ${ride.id}: ${decline_reason}`)
 
+      // Get matching config for retry
       const { data: config } = await supabase
         .from('matching_config')
         .select('*')
@@ -229,14 +215,18 @@ serve(async (req) => {
 
       const maxOffers = config?.max_offers_per_ride || 5
 
+      // Check if we should find next captain
       if (excludedIds.length < maxOffers) {
-        console.log(`[respond-to-offer] Triggering background re-match for ride ${ride.id}`)
+        // Trigger re-matching automatically using EdgeRuntime.waitUntil for background task
+        console.log(`[respond-to-offer] Triggering background re-match for ride ${ride.id} (${excludedIds.length}/${maxOffers} captains tried)`)
         
+        // Use waitUntil to not block response
         EdgeRuntime.waitUntil((async () => {
           try {
+            // Small delay to let DB updates propagate
             await new Promise(resolve => setTimeout(resolve, 500))
             
-            await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/match-captain-v2`, {
+            const response = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/match-captain-v2`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -252,6 +242,9 @@ serve(async (req) => {
                 estimated_duration_mins: ride.estimated_duration_mins || 15,
               }),
             })
+            
+            const result = await response.json()
+            console.log(`[respond-to-offer] Background re-match result:`, result)
           } catch (e) {
             console.error('[respond-to-offer] Background re-match failed:', e)
           }
@@ -262,7 +255,7 @@ serve(async (req) => {
         JSON.stringify({
           success: true,
           action: 'declined',
-          message: 'Offer declined',
+          message: 'Offer declined, ride will be re-matched',
           captains_tried: excludedIds.length,
           max_captains: maxOffers
         }),
@@ -270,8 +263,10 @@ serve(async (req) => {
       )
     }
   } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error'
+    console.error('[respond-to-offer] Error:', message)
     return new Response(
-      JSON.stringify({ error: sanitizeError(error) }),
+      JSON.stringify({ error: message }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
     )
   }
