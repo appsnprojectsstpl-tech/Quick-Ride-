@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Menu, Power } from 'lucide-react';
+import { Menu, Power, AlertCircle, Car } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import GoogleMapView from '@/components/maps/GoogleMapView';
@@ -11,6 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useRideNotifications } from '@/hooks/useRideNotifications';
 import { useRideOffers } from '@/hooks/useRideOffers';
 import { AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 
 interface CaptainHomeProps {
   captain: any;
@@ -23,8 +24,10 @@ const CaptainHome = ({ captain }: CaptainHomeProps) => {
   const [riderInfo, setRiderInfo] = useState<any>(null);
   const [routePath, setRoutePath] = useState<Array<{ lat: number; lng: number }>>([]);
   const [captainMetrics, setCaptainMetrics] = useState<any>(null);
+  const [hasVehicle, setHasVehicle] = useState<boolean | null>(null);
   const { profile } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   // Real-time ride notifications
   useRideNotifications({
@@ -38,8 +41,26 @@ const CaptainHome = ({ captain }: CaptainHomeProps) => {
   // Real-time ride offers
   const { currentOffer, clearOffer } = useRideOffers({
     captainId: captain?.id,
-    enabled: isOnline && !activeRide,
+    enabled: isOnline && !activeRide && hasVehicle === true,
   });
+
+  // Check if captain has a registered vehicle
+  useEffect(() => {
+    if (!captain?.id) return;
+
+    const checkVehicle = async () => {
+      const { data } = await supabase
+        .from('vehicles')
+        .select('id')
+        .eq('captain_id', captain.id)
+        .eq('is_active', true)
+        .limit(1);
+
+      setHasVehicle(data && data.length > 0);
+    };
+
+    checkVehicle();
+  }, [captain?.id]);
 
   // Fetch captain metrics
   useEffect(() => {
@@ -90,6 +111,16 @@ const CaptainHome = ({ captain }: CaptainHomeProps) => {
 
   // Toggle online status
   const handleToggleOnline = async () => {
+    // Check if vehicle is registered
+    if (!hasVehicle) {
+      toast({
+        variant: 'destructive',
+        title: 'Vehicle Required',
+        description: 'Please register your vehicle before going online.',
+      });
+      return;
+    }
+
     // Check if in cooldown
     if (captainMetrics?.cooldown_until) {
       const cooldownEnd = new Date(captainMetrics.cooldown_until);
@@ -346,17 +377,30 @@ const CaptainHome = ({ captain }: CaptainHomeProps) => {
         {!isOnline && !activeRide && (
           <div className="absolute inset-0 bg-background/80 flex items-center justify-center">
             <div className="text-center p-6">
-              <Power className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
-              <h2 className="text-xl font-bold mb-2">You're Offline</h2>
-              <p className="text-muted-foreground mb-4">Go online to start receiving ride requests</p>
-              {captainMetrics?.cooldown_until && new Date(captainMetrics.cooldown_until) > new Date() ? (
-                <div className="text-destructive text-sm mb-4">
-                  Cooldown active until {new Date(captainMetrics.cooldown_until).toLocaleTimeString()}
-                </div>
-              ) : null}
-              <Button onClick={handleToggleOnline} size="lg">
-                Go Online
-              </Button>
+              {hasVehicle === false ? (
+                <>
+                  <Car className="w-16 h-16 mx-auto mb-4 text-warning" />
+                  <h2 className="text-xl font-bold mb-2">Vehicle Not Registered</h2>
+                  <p className="text-muted-foreground mb-4">You need to register your vehicle before going online</p>
+                  <Button onClick={() => navigate('/captain/kyc')} size="lg">
+                    Register Vehicle
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Power className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
+                  <h2 className="text-xl font-bold mb-2">You're Offline</h2>
+                  <p className="text-muted-foreground mb-4">Go online to start receiving ride requests</p>
+                  {captainMetrics?.cooldown_until && new Date(captainMetrics.cooldown_until) > new Date() ? (
+                    <div className="text-destructive text-sm mb-4">
+                      Cooldown active until {new Date(captainMetrics.cooldown_until).toLocaleTimeString()}
+                    </div>
+                  ) : null}
+                  <Button onClick={handleToggleOnline} size="lg" disabled={hasVehicle === null}>
+                    Go Online
+                  </Button>
+                </>
+              )}
             </div>
           </div>
         )}
