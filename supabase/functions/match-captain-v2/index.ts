@@ -288,6 +288,37 @@ serve(async (req) => {
       console.error('[match-captain-v2] Failed to create offer:', offerError)
     }
 
+    // Send push notification to captain
+    try {
+      const { data: rideDetails } = await supabase
+        .from('rides')
+        .select('pickup_address, final_fare')
+        .eq('id', ride_id)
+        .single()
+
+      await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/send-notification`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+        },
+        body: JSON.stringify({
+          user_ids: [selectedCaptain.user_id],
+          title: '🚗 New Ride Request!',
+          body: `Pickup: ${rideDetails?.pickup_address || 'Loading...'}\nEarning: ₹${estimatedEarnings}`,
+          data: {
+            type: 'ride_request',
+            ride_id,
+            offer_id: offer?.id,
+          },
+          priority: 'high'
+        }),
+      })
+      console.log('[match-captain-v2] Push notification sent to captain')
+    } catch (notifError) {
+      console.error('[match-captain-v2] Failed to send push notification:', notifError)
+    }
+
     // Update captain metrics - increment offers received
     await supabase
       .from('captain_metrics')
