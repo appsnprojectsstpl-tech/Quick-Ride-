@@ -6,9 +6,23 @@ declare const EdgeRuntime: {
   waitUntil: (promise: Promise<unknown>) => void
 }
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+// Dynamic CORS based on origin
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') || '';
+  const allowedPatterns = [
+    /^https:\/\/.*\.lovableproject\.com$/,
+    /^https:\/\/.*\.lovable\.app$/,
+    /^capacitor:\/\/localhost$/,
+    /^http:\/\/localhost:\d+$/
+  ];
+  
+  const isAllowed = allowedPatterns.some(pattern => pattern.test(origin));
+  
+  return {
+    'Access-Control-Allow-Origin': isAllowed ? origin : 'https://lovable.app',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Credentials': 'true',
+  };
 }
 
 // Input validation schema
@@ -19,20 +33,18 @@ const RespondRequestSchema = z.object({
   decline_reason: z.string().max(500).optional(),
 })
 
-// Sanitize error for client response
+// Sanitize error for client response - generic messages only
 function sanitizeError(error: unknown): string {
   console.error('[respond-to-offer] Error:', error)
   if (error instanceof z.ZodError) {
     return 'Invalid request parameters'
   }
-  if (error instanceof Error) {
-    if (error.message.includes('not found')) return 'Offer not found'
-    if (error.message.includes('expired')) return 'Offer has expired'
-  }
-  return 'An error occurred processing your request'
+  return 'Unable to process request. Please try again.'
 }
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+  
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
@@ -43,7 +55,6 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // Validate input
     const rawInput = await req.json()
     const input = RespondRequestSchema.parse(rawInput)
     const { offer_id, captain_id, response, decline_reason } = input
@@ -58,7 +69,7 @@ serve(async (req) => {
 
     if (offerError || !offer) {
       return new Response(
-        JSON.stringify({ success: false, error: 'Offer not found' }),
+        JSON.stringify({ success: false, error: 'Unable to process request' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 404 }
       )
     }
@@ -72,7 +83,7 @@ serve(async (req) => {
 
     if (offer.response_status !== 'pending') {
       return new Response(
-        JSON.stringify({ success: false, error: 'Offer already responded to' }),
+        JSON.stringify({ success: false, error: 'Unable to process request' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
       )
     }
@@ -84,7 +95,7 @@ serve(async (req) => {
         .eq('id', offer_id)
 
       return new Response(
-        JSON.stringify({ success: false, error: 'Offer has expired' }),
+        JSON.stringify({ success: false, error: 'Unable to process request' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
       )
     }
@@ -114,7 +125,6 @@ serve(async (req) => {
         .update({ status: 'on_ride' })
         .eq('id', captain_id)
 
-      // Get captain info for notification
       const { data: captainData } = await supabase
         .from('captains')
         .select('user_id, rating')
@@ -134,7 +144,6 @@ serve(async (req) => {
         .eq('is_active', true)
         .single()
 
-      // Send push notification to rider
       if (ride.rider_id) {
         try {
           await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/send-notification`, {

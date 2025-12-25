@@ -2,9 +2,23 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { z } from 'https://deno.land/x/zod@v3.22.4/mod.ts'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+// Dynamic CORS based on origin
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') || '';
+  const allowedPatterns = [
+    /^https:\/\/.*\.lovableproject\.com$/,
+    /^https:\/\/.*\.lovable\.app$/,
+    /^capacitor:\/\/localhost$/,
+    /^http:\/\/localhost:\d+$/
+  ];
+  
+  const isAllowed = allowedPatterns.some(pattern => pattern.test(origin));
+  
+  return {
+    'Access-Control-Allow-Origin': isAllowed ? origin : 'https://lovable.app',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Credentials': 'true',
+  };
 }
 
 // Input validation schema
@@ -18,13 +32,13 @@ const FareRequestSchema = z.object({
   promo_code: z.string().max(50).optional(),
 })
 
-// Sanitize error for client response
+// Sanitize error for client response - generic messages only
 function sanitizeError(error: unknown): string {
   console.error('[calculate-fare] Error:', error)
   if (error instanceof z.ZodError) {
     return 'Invalid request parameters'
   }
-  return 'An error occurred processing your request'
+  return 'Unable to process request. Please try again.'
 }
 
 async function validateAndApplyPromo(supabase: any, code: string, totalFare: number) {
@@ -73,6 +87,8 @@ async function validateAndApplyPromo(supabase: any, code: string, totalFare: num
 }
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+  
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
@@ -83,7 +99,6 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_ANON_KEY') ?? ''
     )
 
-    // Validate input
     const rawInput = await req.json()
     const input = FareRequestSchema.parse(rawInput)
     const { pickup_lat, pickup_lng, drop_lat, drop_lng, vehicle_type, city, promo_code } = input
@@ -192,6 +207,7 @@ serve(async (req) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   } catch (error) {
+    const corsHeaders = getCorsHeaders(req);
     return new Response(
       JSON.stringify({ error: sanitizeError(error) }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
