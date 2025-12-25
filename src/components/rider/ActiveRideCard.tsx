@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Phone, Share2, X, AlertTriangle, Clock, MapPin } from 'lucide-react';
+import { Phone, Share2, X, AlertTriangle, Clock, MapPin, KeyRound } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useCaptainTracking } from '@/hooks/useCaptainTracking';
 import { useDirections } from '@/hooks/useDirections';
+import OTPVerificationSheet from './OTPVerificationSheet';
 
 interface Captain {
   id: string;
@@ -55,6 +56,7 @@ const ActiveRideCard = ({
   onSOS 
 }: ActiveRideCardProps) => {
   const { toast } = useToast();
+  const [showOTPSheet, setShowOTPSheet] = useState(false);
   
   // Track captain's real-time location
   const { captainLocation } = useCaptainTracking({
@@ -120,127 +122,169 @@ const ActiveRideCard = ({
     }
   };
 
-  return (
-    <div className="bg-card rounded-2xl shadow-lg border border-border overflow-hidden">
-      {/* Status Header */}
-      <div className={`px-4 py-3 ${statusLabels[status]?.color || 'bg-muted'}`}>
-        <div className="flex items-center justify-between">
-          <span className="font-semibold">{statusLabels[status]?.label || status}</span>
-          {liveEta && ['captain_arriving', 'in_progress'].includes(status) && (
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-current animate-pulse" />
-              <span className="text-sm font-medium">ETA: {liveEta}</span>
-            </div>
-          )}
-        </div>
-      </div>
+  const handleOTPVerified = () => {
+    toast({ 
+      title: 'Ride Started!', 
+      description: 'Have a safe journey.' 
+    });
+  };
 
-      {/* Live ETA Banner */}
-      {liveDuration && ['captain_arriving', 'in_progress'].includes(status) && (
-        <div className="bg-success/10 border-b border-success/20 px-4 py-2">
+  // Show OTP verification button when captain is waiting
+  const showOTPVerification = status === 'waiting_for_rider' && otp;
+
+  return (
+    <>
+      <div className="bg-card rounded-2xl shadow-lg border border-border overflow-hidden">
+        {/* Status Header */}
+        <div className={`px-4 py-3 ${statusLabels[status]?.color || 'bg-muted'}`}>
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-success" />
-              <span className="text-sm text-success font-medium">Live Traffic Update</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="text-right">
-                <span className="font-bold">{liveDuration}</span>
-                {routeInfo?.distance && (
-                  <span className="text-xs text-muted-foreground ml-2">
-                    ({routeInfo.distance.text})
+            <span className="font-semibold">{statusLabels[status]?.label || status}</span>
+            {liveEta && ['captain_arriving', 'in_progress'].includes(status) && (
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-current animate-pulse" />
+                <span className="text-sm font-medium">ETA: {liveEta}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Live ETA Banner */}
+        {liveDuration && ['captain_arriving', 'in_progress'].includes(status) && (
+          <div className="bg-success/10 border-b border-success/20 px-4 py-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-success" />
+                <span className="text-sm text-success font-medium">Live Traffic Update</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="text-right">
+                  <span className="font-bold">{liveDuration}</span>
+                  {routeInfo?.distance && (
+                    <span className="text-xs text-muted-foreground ml-2">
+                      ({routeInfo.distance.text})
+                    </span>
+                  )}
+                </div>
+                {lastUpdated && (
+                  <span className="text-xs text-muted-foreground">
+                    {Math.round((Date.now() - lastUpdated.getTime()) / 1000)}s ago
                   </span>
                 )}
               </div>
-              {lastUpdated && (
-                <span className="text-xs text-muted-foreground">
-                  {Math.round((Date.now() - lastUpdated.getTime()) / 1000)}s ago
-                </span>
-              )}
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* OTP Display */}
-      {otp && status !== 'in_progress' && (
-        <div className="px-4 py-3 bg-primary/10 border-b border-border">
-          <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">Share OTP with captain</span>
-            <span className="text-2xl font-bold tracking-wider">{otp}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Captain Info */}
-      {captain && (
-        <div className="p-4">
-          <div className="flex items-center gap-4">
-            <Avatar className="w-16 h-16">
-              <AvatarImage src={captain.avatar_url || undefined} />
-              <AvatarFallback className="bg-primary text-primary-foreground text-xl">
-                {captain.name?.charAt(0) || 'C'}
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex-1">
-              <p className="font-semibold text-lg">{captain.name}</p>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <span>⭐ {captain.rating?.toFixed(1)}</span>
-                <span>•</span>
-                <span>{captain.vehicle.make} {captain.vehicle.model}</span>
+        {/* OTP Verification Banner - Show when captain is waiting */}
+        {showOTPVerification && (
+          <div className="bg-primary/10 border-b border-primary/20 px-4 py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <KeyRound className="w-5 h-5 text-primary" />
+                <div>
+                  <p className="font-medium text-sm">Captain has arrived!</p>
+                  <p className="text-xs text-muted-foreground">Verify OTP to start your ride</p>
+                </div>
               </div>
-              <Badge variant="outline" className="mt-1">
-                {captain.vehicle.registration_number}
-              </Badge>
+              <Button size="sm" onClick={() => setShowOTPSheet(true)}>
+                Enter OTP
+              </Button>
             </div>
           </div>
+        )}
 
-          {/* Action Buttons */}
-          <div className="flex gap-2 mt-4">
-            <Button variant="outline" size="sm" className="flex-1" onClick={handleCall}>
-              <Phone className="w-4 h-4 mr-2" />
-              Call
-            </Button>
-            <Button variant="outline" size="sm" className="flex-1" onClick={handleShare}>
-              <Share2 className="w-4 h-4 mr-2" />
-              Share Trip
-            </Button>
+        {/* OTP Display - Only show when not in waiting_for_rider status */}
+        {otp && status !== 'in_progress' && status !== 'waiting_for_rider' && (
+          <div className="px-4 py-3 bg-primary/10 border-b border-border">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Share OTP with captain</span>
+              <span className="text-2xl font-bold tracking-wider">{otp}</span>
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Pending State */}
-      {status === 'pending' && !captain && (
-        <div className="p-6 text-center">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
-            <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+        {/* Captain Info */}
+        {captain && (
+          <div className="p-4">
+            <div className="flex items-center gap-4">
+              <Avatar className="w-16 h-16">
+                <AvatarImage src={captain.avatar_url || undefined} />
+                <AvatarFallback className="bg-primary text-primary-foreground text-xl">
+                  {captain.name?.charAt(0) || 'C'}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1">
+                <p className="font-semibold text-lg">{captain.name}</p>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span>⭐ {captain.rating?.toFixed(1)}</span>
+                  <span>•</span>
+                  <span>{captain.vehicle.make} {captain.vehicle.model}</span>
+                </div>
+                <Badge variant="outline" className="mt-1">
+                  {captain.vehicle.registration_number}
+                </Badge>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-2 mt-4">
+              <Button variant="outline" size="sm" className="flex-1" onClick={handleCall}>
+                <Phone className="w-4 h-4 mr-2" />
+                Call
+              </Button>
+              <Button variant="outline" size="sm" className="flex-1" onClick={handleShare}>
+                <Share2 className="w-4 h-4 mr-2" />
+                Share Trip
+              </Button>
+            </div>
           </div>
-          <p className="text-muted-foreground">Looking for captains nearby...</p>
-        </div>
-      )}
+        )}
 
-      {/* Bottom Actions */}
-      <div className="flex border-t border-border">
-        {status !== 'in_progress' && (
+        {/* Pending State */}
+        {status === 'pending' && !captain && (
+          <div className="p-6 text-center">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
+              <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+            </div>
+            <p className="text-muted-foreground">Looking for captains nearby...</p>
+          </div>
+        )}
+
+        {/* Bottom Actions */}
+        <div className="flex border-t border-border">
+          {status !== 'in_progress' && (
+            <Button
+              variant="ghost"
+              className="flex-1 rounded-none h-12 text-destructive hover:text-destructive hover:bg-destructive/10"
+              onClick={onCancel}
+            >
+              <X className="w-4 h-4 mr-2" />
+              Cancel Ride
+            </Button>
+          )}
           <Button
             variant="ghost"
-            className="flex-1 rounded-none h-12 text-destructive hover:text-destructive hover:bg-destructive/10"
-            onClick={onCancel}
+            className="flex-1 rounded-none h-12 sos-button"
+            onClick={onSOS}
           >
-            <X className="w-4 h-4 mr-2" />
-            Cancel Ride
+            <AlertTriangle className="w-4 h-4 mr-2" />
+            SOS
           </Button>
-        )}
-        <Button
-          variant="ghost"
-          className="flex-1 rounded-none h-12 sos-button"
-          onClick={onSOS}
-        >
-          <AlertTriangle className="w-4 h-4 mr-2" />
-          SOS
-        </Button>
+        </div>
       </div>
-    </div>
+
+      {/* OTP Verification Sheet */}
+      {otp && (
+        <OTPVerificationSheet
+          isOpen={showOTPSheet}
+          onClose={() => setShowOTPSheet(false)}
+          rideId={rideId}
+          expectedOTP={otp}
+          captainName={captain?.name}
+          onVerified={handleOTPVerified}
+        />
+      )}
+    </>
   );
 };
 

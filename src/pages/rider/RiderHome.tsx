@@ -9,6 +9,7 @@ import SearchingCaptainView from '@/components/rider/SearchingCaptainView';
 import ActiveRideCard from '@/components/rider/ActiveRideCard';
 import CancellationDialog from '@/components/rider/CancellationDialog';
 import RideRatingDialog from '@/components/rider/RideRatingDialog';
+import RideCompletionSheet from '@/components/rider/RideCompletionSheet';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
@@ -49,6 +50,7 @@ const RiderHome = () => {
   const [currentLocation, setCurrentLocation] = useState({ lat: 12.9716, lng: 77.5946 });
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [showRatingDialog, setShowRatingDialog] = useState(false);
+  const [showCompletionSheet, setShowCompletionSheet] = useState(false);
   const [completedRideId, setCompletedRideId] = useState<string | null>(null);
   const [completedCaptainName, setCompletedCaptainName] = useState<string | undefined>(undefined);
   const [showVehicleOptions, setShowVehicleOptions] = useState(false);
@@ -71,11 +73,10 @@ const RiderHome = () => {
       } else if (status === 'in_progress') {
         dispatch({ type: 'SET_STATUS', payload: 'IN_PROGRESS' });
       } else if (status === 'completed') {
+        // Show completion sheet first
         setCompletedRideId(rideId);
         setCompletedCaptainName(activeRide?.captain?.name);
-        setShowRatingDialog(true);
-        setActiveRide(null);
-        dispatch({ type: 'RESET' });
+        setShowCompletionSheet(true);
       } else if (status === 'cancelled') {
         dispatch({ type: 'RESET' });
       }
@@ -553,6 +554,21 @@ const RiderHome = () => {
         rideStatus={activeRide?.status || 'pending'}
         matchedAt={activeRide?.matchedAt || null}
       />
+
+      {/* Ride Completion Sheet */}
+      {completedRideId && (
+        <RideCompletionSheet
+          isOpen={showCompletionSheet}
+          onClose={() => setShowCompletionSheet(false)}
+          rideId={completedRideId}
+          onPaymentConfirmed={() => {
+            setShowCompletionSheet(false);
+            setShowRatingDialog(true);
+            setActiveRide(null);
+            dispatch({ type: 'RESET' });
+          }}
+        />
+      )}
 
       {/* Rating Dialog */}
       {completedRideId && (
