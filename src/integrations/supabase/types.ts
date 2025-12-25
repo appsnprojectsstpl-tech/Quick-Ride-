@@ -1010,6 +1010,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      promote_user_to_captain: {
+        Args: { target_user_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
       app_role: "admin" | "rider" | "captain"
