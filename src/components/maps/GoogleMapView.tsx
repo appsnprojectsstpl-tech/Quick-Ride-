@@ -7,7 +7,7 @@ interface MapMarker {
   lat: number;
   lng: number;
   title?: string;
-  icon?: 'pickup' | 'drop' | 'dropoff' | 'captain' | 'default';
+  icon?: 'pickup' | 'drop' | 'dropoff' | 'captain' | 'bike' | 'auto' | 'cab' | 'default';
 }
 
 interface GoogleMapViewProps {
@@ -110,6 +110,9 @@ const GoogleMapView = ({
     pickup: 'https://maps.google.com/mapfiles/ms/icons/green-dot.png',
     drop: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png',
     dropoff: 'https://maps.google.com/mapfiles/ms/icons/red-dot.png',
+    bike: 'https://maps.google.com/mapfiles/ms/icons/motorcycling.png',
+    auto: 'https://maps.google.com/mapfiles/ms/icons/cabs.png',
+    cab: 'https://maps.google.com/mapfiles/ms/icons/cabs.png',
     default: undefined,
   }), []);
 

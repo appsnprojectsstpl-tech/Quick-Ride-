@@ -17,6 +17,7 @@ import { useRideNotifications } from '@/hooks/useRideNotifications';
 import { useCaptainTracking } from '@/hooks/useCaptainTracking';
 import { useDirections } from '@/hooks/useDirections';
 import { useBooking, VehicleType } from '@/contexts/BookingContext';
+import { useNearbyCaptains } from '@/hooks/useNearbyCaptains';
 import { Database } from '@/integrations/supabase/types';
 
 type RideStatus = Database['public']['Enums']['ride_status'];
@@ -90,6 +91,18 @@ const RiderHome = () => {
   const { captainLocation, isTracking } = useCaptainTracking({
     captainId: activeRide?.captainId || null,
     enabled: !!shouldTrackCaptain,
+  });
+
+  // Fetch nearby captains when not in active ride
+  const isSearching = state.status === 'SEARCHING_CAPTAIN';
+  const hasActiveRide = activeRide && ['matched', 'captain_arriving', 'waiting_for_rider', 'in_progress'].includes(activeRide.status);
+  const showNearbyCaptains = !isSearching && !hasActiveRide;
+
+  const { nearbyCaptains } = useNearbyCaptains({
+    lat: currentLocation.lat,
+    lng: currentLocation.lng,
+    radiusKm: 5,
+    enabled: showNearbyCaptains,
   });
 
   // Auto-show vehicle options when destination is selected
@@ -376,7 +389,7 @@ const RiderHome = () => {
     setShowConfirmRide(true);
   };
 
-  // Build map markers with captain location
+  // Build map markers with captain location and nearby captains
   const mapMarkers = useMemo(() => {
     const markers = [];
     
@@ -419,10 +432,22 @@ const RiderHome = () => {
           icon: 'drop' as const 
         });
       }
+
+      // Add nearby captain markers when not in active ride
+      if (showNearbyCaptains && nearbyCaptains.length > 0) {
+        nearbyCaptains.forEach((captain) => {
+          markers.push({
+            lat: captain.lat,
+            lng: captain.lng,
+            title: `${captain.vehicle_type} - ${captain.distance_km}km away`,
+            icon: captain.vehicle_type as 'bike' | 'auto' | 'cab',
+          });
+        });
+      }
     }
     
     return markers;
-  }, [activeRide, state.pickupLocation, state.dropLocation, captainLocation, shouldTrackCaptain]);
+  }, [activeRide, state.pickupLocation, state.dropLocation, captainLocation, shouldTrackCaptain, showNearbyCaptains, nearbyCaptains]);
 
   // Center map
   const mapCenter = useMemo(() => {
@@ -438,9 +463,7 @@ const RiderHome = () => {
     return currentLocation;
   }, [captainLocation, shouldTrackCaptain, activeRide, state.pickupLocation, currentLocation]);
 
-  // Determine what UI to show based on booking status
-  const isSearching = state.status === 'SEARCHING_CAPTAIN';
-  const hasActiveRide = activeRide && ['matched', 'captain_arriving', 'waiting_for_rider', 'in_progress'].includes(activeRide.status);
+  // showLocationPanel uses the already-declared isSearching and hasActiveRide
   const showLocationPanel = !isSearching && !hasActiveRide;
 
   return (
