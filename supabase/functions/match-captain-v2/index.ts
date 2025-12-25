@@ -2,9 +2,23 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { z } from 'https://deno.land/x/zod@v3.22.4/mod.ts'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+// Dynamic CORS based on origin
+function getCorsHeaders(req: Request) {
+  const origin = req.headers.get('origin') || '';
+  const allowedPatterns = [
+    /^https:\/\/.*\.lovableproject\.com$/,
+    /^https:\/\/.*\.lovable\.app$/,
+    /^capacitor:\/\/localhost$/,
+    /^http:\/\/localhost:\d+$/
+  ];
+  
+  const isAllowed = allowedPatterns.some(pattern => pattern.test(origin));
+  
+  return {
+    'Access-Control-Allow-Origin': isAllowed ? origin : 'https://lovable.app',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Credentials': 'true',
+  };
 }
 
 // Input validation schema
@@ -19,16 +33,13 @@ const MatchRequestSchema = z.object({
   estimated_duration_mins: z.number().nonnegative().optional().default(0),
 })
 
-// Sanitize error for client response
+// Sanitize error for client response - generic messages only
 function sanitizeError(error: unknown): string {
   console.error('[match-captain-v2] Error:', error)
   if (error instanceof z.ZodError) {
     return 'Invalid request parameters'
   }
-  if (error instanceof Error) {
-    if (error.message.includes('not found')) return 'Resource not found'
-  }
-  return 'An error occurred processing your request'
+  return 'Unable to process request. Please try again.'
 }
 
 interface CaptainCandidate {
@@ -78,6 +89,8 @@ function calculateCaptainScore(
 }
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
+  
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
@@ -88,7 +101,6 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // Validate input
     const rawInput = await req.json()
     const input = MatchRequestSchema.parse(rawInput)
     const { ride_id, pickup_lat, pickup_lng, vehicle_type, city, estimated_fare, estimated_distance_km, estimated_duration_mins } = input
@@ -102,7 +114,11 @@ serve(async (req) => {
       .single()
 
     if (rideError) {
-      throw new Error('Ride not found')
+      console.error('[match-captain-v2] Ride not found:', rideError)
+      return new Response(
+        JSON.stringify({ matched: false, error: 'Unable to process request' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
+      )
     }
 
     const excludedCaptainIds = ride?.excluded_captain_ids || []
@@ -160,7 +176,11 @@ serve(async (req) => {
       .eq('is_active', true)
 
     if (vehiclesError) {
-      throw new Error('Failed to fetch available vehicles')
+      console.error('[match-captain-v2] Failed to fetch vehicles:', vehiclesError)
+      return new Response(
+        JSON.stringify({ matched: false, error: 'Unable to process request' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
+      )
     }
 
     const captainIds = vehicles?.map((v: any) => v.captain_id) || []
@@ -273,7 +293,6 @@ serve(async (req) => {
       console.error('[match-captain-v2] Failed to create offer:', offerError)
     }
 
-    // Send push notification to captain
     try {
       const { data: rideDetails } = await supabase
         .from('rides')
@@ -372,6 +391,7 @@ serve(async (req) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   } catch (error) {
+    const corsHeaders = getCorsHeaders(req);
     return new Response(
       JSON.stringify({ error: sanitizeError(error) }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 500 }
