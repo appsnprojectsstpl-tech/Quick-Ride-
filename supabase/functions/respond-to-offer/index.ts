@@ -104,6 +104,52 @@ serve(async (req) => {
         .update({ status: 'on_ride' })
         .eq('id', captain_id)
 
+      // Get captain profile for notification
+      const { data: captainData } = await supabase
+        .from('captains')
+        .select('user_id, rating')
+        .eq('id', captain_id)
+        .single()
+
+      const { data: captainProfile } = await supabase
+        .from('profiles')
+        .select('name')
+        .eq('user_id', captainData?.user_id)
+        .single()
+
+      const { data: vehicle } = await supabase
+        .from('vehicles')
+        .select('make, model, registration_number')
+        .eq('captain_id', captain_id)
+        .eq('is_active', true)
+        .single()
+
+      // Send push notification to rider
+      if (ride.rider_id) {
+        try {
+          await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/send-notification`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+            },
+            body: JSON.stringify({
+              user_ids: [ride.rider_id],
+              title: '✅ Ride Confirmed!',
+              body: `${captainProfile?.name || 'Your captain'} is on the way\n${vehicle?.make} ${vehicle?.model} - ${vehicle?.registration_number}`,
+              data: {
+                type: 'ride_accepted',
+                ride_id: ride.id,
+              },
+              priority: 'high'
+            }),
+          })
+          console.log('[respond-to-offer] Push notification sent to rider')
+        } catch (notifError) {
+          console.error('[respond-to-offer] Failed to send push notification:', notifError)
+        }
+      }
+
       console.log(`[respond-to-offer] Captain ${captain_id} accepted ride ${ride.id}`)
 
       return new Response(

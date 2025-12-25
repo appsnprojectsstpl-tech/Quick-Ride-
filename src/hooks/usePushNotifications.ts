@@ -1,10 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { Capacitor } from '@capacitor/core';
+import { PushNotifications, Token, PushNotificationSchema, ActionPerformed } from '@capacitor/push-notifications';
 
 interface UsePushNotificationsOptions {
-  onPermissionChange?: (permission: NotificationPermission) => void;
+  userId?: string | null;
+  onPermissionChange?: (permission: NotificationPermission | 'granted' | 'denied') => void;
+  onNotificationReceived?: (notification: PushNotificationSchema) => void;
+  onNotificationAction?: (action: ActionPerformed) => void;
 }
 
-// Sound utility for playing notification beeps
+// Sound utility for playing notification beeps (web fallback)
 const playNotificationSound = (type: 'success' | 'alert' | 'warning' = 'alert') => {
   try {
     const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
@@ -17,7 +23,6 @@ const playNotificationSound = (type: 'success' | 'alert' | 'warning' = 'alert') 
     oscillator.connect(gainNode);
     gainNode.connect(audioContext.destination);
     
-    // Different tones for different notification types
     const frequencies = {
       success: [600, 800],
       alert: [800, 1000],
@@ -43,36 +48,161 @@ const playNotificationSound = (type: 'success' | 'alert' | 'warning' = 'alert') 
   }
 };
 
+// Detect platform
+const isNative = Capacitor.isNativePlatform();
+const getPlatform = (): 'ios' | 'android' | 'web' => {
+  if (!isNative) return 'web';
+  return Capacitor.getPlatform() as 'ios' | 'android';
+};
+
 export const usePushNotifications = (options: UsePushNotificationsOptions = {}) => {
-  const { onPermissionChange } = options;
+  const { userId, onPermissionChange, onNotificationReceived, onNotificationAction } = options;
   
   const [isSupported, setIsSupported] = useState(false);
-  const [permission, setPermission] = useState<NotificationPermission>('default');
+  const [permission, setPermission] = useState<'default' | 'granted' | 'denied'>('default');
+  const [fcmToken, setFcmToken] = useState<string | null>(null);
+  const tokenSavedRef = useRef(false);
 
+  // Initialize push notifications
   useEffect(() => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
+    if (isNative) {
       setIsSupported(true);
-      setPermission(Notification.permission);
+      checkNativePermissions();
+    } else if (typeof window !== 'undefined' && 'Notification' in window) {
+      setIsSupported(true);
+      setPermission(Notification.permission as 'default' | 'granted' | 'denied');
     }
   }, []);
 
+  // Native permission check
+  const checkNativePermissions = async () => {
+    try {
+      const permStatus = await PushNotifications.checkPermissions();
+      if (permStatus.receive === 'granted') {
+        setPermission('granted');
+        await registerNativePush();
+      } else if (permStatus.receive === 'denied') {
+        setPermission('denied');
+      }
+    } catch (error) {
+      console.error('Error checking native permissions:', error);
+    }
+  };
+
+  // Register for native push notifications
+  const registerNativePush = async () => {
+    try {
+      // Register with FCM/APNs
+      await PushNotifications.register();
+
+      // Listen for token
+      PushNotifications.addListener('registration', async (token: Token) => {
+        console.log('[Push] FCM Token received:', token.value);
+        setFcmToken(token.value);
+        
+        // Save token to database
+        if (userId && !tokenSavedRef.current) {
+          await saveTokenToDatabase(token.value);
+        }
+      });
+
+      // Listen for registration errors
+      PushNotifications.addListener('registrationError', (error) => {
+        console.error('[Push] Registration error:', error);
+      });
+
+      // Listen for notifications when app is open
+      PushNotifications.addListener('pushNotificationReceived', (notification) => {
+        console.log('[Push] Notification received:', notification);
+        playNotificationSound('alert');
+        onNotificationReceived?.(notification);
+      });
+
+      // Listen for notification taps
+      PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
+        console.log('[Push] Notification action:', action);
+        onNotificationAction?.(action);
+      });
+    } catch (error) {
+      console.error('Error registering native push:', error);
+    }
+  };
+
+  // Save token to database
+  const saveTokenToDatabase = async (token: string) => {
+    if (!userId || tokenSavedRef.current) return;
+    
+    try {
+      const platform = getPlatform();
+      
+      // Upsert token (update if exists, insert if not)
+      const { error } = await supabase
+        .from('device_tokens')
+        .upsert(
+          { 
+            user_id: userId, 
+            token, 
+            platform,
+            is_active: true,
+            updated_at: new Date().toISOString()
+          },
+          { 
+            onConflict: 'user_id,token',
+            ignoreDuplicates: false
+          }
+        );
+
+      if (error) {
+        console.error('[Push] Error saving token:', error);
+      } else {
+        console.log('[Push] Token saved successfully');
+        tokenSavedRef.current = true;
+      }
+    } catch (error) {
+      console.error('[Push] Error in saveTokenToDatabase:', error);
+    }
+  };
+
+  // Effect to save token when userId becomes available
+  useEffect(() => {
+    if (userId && fcmToken && !tokenSavedRef.current) {
+      saveTokenToDatabase(fcmToken);
+    }
+  }, [userId, fcmToken]);
+
+  // Request permission
   const requestPermission = useCallback(async () => {
     if (!isSupported) return 'denied';
     
     try {
-      const result = await Notification.requestPermission();
-      setPermission(result);
-      onPermissionChange?.(result);
-      return result;
+      if (isNative) {
+        const permStatus = await PushNotifications.requestPermissions();
+        const result = permStatus.receive === 'granted' ? 'granted' : 'denied';
+        setPermission(result);
+        onPermissionChange?.(result);
+        
+        if (result === 'granted') {
+          await registerNativePush();
+        }
+        
+        return result;
+      } else {
+        // Web notifications
+        const result = await Notification.requestPermission();
+        setPermission(result as 'default' | 'granted' | 'denied');
+        onPermissionChange?.(result);
+        return result;
+      }
     } catch (error) {
       console.error('Error requesting notification permission:', error);
       return 'denied';
     }
   }, [isSupported, onPermissionChange]);
 
+  // Show web notification (fallback for web)
   const showNotification = useCallback((title: string, options?: NotificationOptions) => {
-    if (!isSupported || permission !== 'granted') {
-      console.log('Notifications not available or not permitted');
+    if (!isSupported || permission !== 'granted' || isNative) {
+      console.log('Web notifications not available');
       return null;
     }
 
@@ -95,7 +225,7 @@ export const usePushNotifications = (options: UsePushNotificationsOptions = {}) 
     }
   }, [isSupported, permission]);
 
-  // Ride-specific notifications with sound
+  // Ride-specific notifications (local - for web fallback)
   const notifyRideRequest = useCallback((pickupAddress: string, fare: number) => {
     playNotificationSound('alert');
     return showNotification('New Ride Request! 🚗', {
@@ -163,12 +293,34 @@ export const usePushNotifications = (options: UsePushNotificationsOptions = {}) 
     });
   }, [showNotification]);
 
+  // Deactivate token on logout
+  const deactivateToken = useCallback(async () => {
+    if (!userId || !fcmToken) return;
+    
+    try {
+      await supabase
+        .from('device_tokens')
+        .update({ is_active: false })
+        .eq('user_id', userId)
+        .eq('token', fcmToken);
+      
+      tokenSavedRef.current = false;
+      console.log('[Push] Token deactivated');
+    } catch (error) {
+      console.error('[Push] Error deactivating token:', error);
+    }
+  }, [userId, fcmToken]);
+
   return {
     isSupported,
     permission,
+    fcmToken,
+    isNative,
     requestPermission,
     showNotification,
     playNotificationSound,
+    deactivateToken,
+    // Local notification helpers (web fallback)
     notifyRideRequest,
     notifyRideAccepted,
     notifyCaptainArriving,

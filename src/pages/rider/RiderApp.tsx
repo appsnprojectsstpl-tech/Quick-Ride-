@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Routes, Route, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { BookingProvider } from '@/contexts/BookingContext';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
 import RiderHome from './RiderHome';
 import RiderHistory from './RiderHistory';
 import RiderProfile from './RiderProfile';
@@ -14,9 +15,28 @@ const RiderApp = () => {
   const { user, isLoading } = useAuth();
   const navigate = useNavigate();
 
-  // Only redirect for protected routes (profile, history, etc.)
-  // Allow browsing and vehicle selection without auth
-  // Auth will be required at booking confirmation time
+  // Initialize push notifications
+  const { requestPermission, permission, isSupported } = usePushNotifications({
+    userId: user?.id,
+    onNotificationAction: (action) => {
+      // Handle notification tap - navigate to relevant screen
+      const data = action.notification.data as any;
+      if (data?.type === 'ride_accepted' || data?.type === 'captain_arriving') {
+        // Already on home, ride card will show
+      }
+    }
+  });
+
+  // Request notification permission when user is authenticated
+  useEffect(() => {
+    if (user && isSupported && permission === 'default') {
+      // Small delay to not overwhelm user immediately
+      const timer = setTimeout(() => {
+        requestPermission();
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [user, isSupported, permission, requestPermission]);
 
   if (isLoading) {
     return (

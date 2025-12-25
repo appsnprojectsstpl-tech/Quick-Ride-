@@ -164,6 +164,57 @@ serve(async (req) => {
       .eq('ride_id', ride_id)
       .eq('response_status', 'pending')
 
+    // Send push notification to the other party
+    try {
+      let notifyUserIds: string[] = []
+      let notifyTitle = ''
+      let notifyBody = ''
+
+      if (cancelled_by === 'rider' && ride.captain_id) {
+        // Notify captain that rider cancelled
+        const { data: captainData } = await supabase
+          .from('captains')
+          .select('user_id')
+          .eq('id', ride.captain_id)
+          .single()
+        
+        if (captainData?.user_id) {
+          notifyUserIds = [captainData.user_id]
+          notifyTitle = '❌ Ride Cancelled by Rider'
+          notifyBody = reason || 'The rider has cancelled this ride'
+        }
+      } else if (cancelled_by === 'captain' && ride.rider_id) {
+        // Notify rider that captain cancelled
+        notifyUserIds = [ride.rider_id]
+        notifyTitle = '🔄 Finding New Captain'
+        notifyBody = 'Your captain cancelled. We\'re finding you a new one.'
+      }
+
+      if (notifyUserIds.length > 0) {
+        await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/send-notification`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+          },
+          body: JSON.stringify({
+            user_ids: notifyUserIds,
+            title: notifyTitle,
+            body: notifyBody,
+            data: {
+              type: 'ride_cancelled',
+              ride_id,
+              cancelled_by,
+            },
+            priority: 'high'
+          }),
+        })
+        console.log('[handle-cancellation] Push notification sent')
+      }
+    } catch (notifError) {
+      console.error('[handle-cancellation] Failed to send push notification:', notifError)
+    }
+
     console.log(`[handle-cancellation] Ride ${ride_id} cancelled by ${cancelled_by}, fee: ₹${cancellationFee}`)
 
     return new Response(
