@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Phone, Share2, X, AlertTriangle, Clock, MapPin, KeyRound } from 'lucide-react';
+import { Phone, Share2, X, AlertTriangle, Clock, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useCaptainTracking } from '@/hooks/useCaptainTracking';
 import { useDirections } from '@/hooks/useDirections';
-import OTPVerificationSheet from './OTPVerificationSheet';
 
 interface Captain {
   id: string;
@@ -43,21 +42,20 @@ const statusLabels: Record<string, { label: string; color: string }> = {
   in_progress: { label: 'On Trip', color: 'bg-success text-success-foreground' },
 };
 
-const ActiveRideCard = ({ 
-  rideId, 
-  status, 
-  captain, 
-  otp, 
+const ActiveRideCard = ({
+  rideId,
+  status,
+  captain,
+  otp,
   pickupLat,
   pickupLng,
   dropLat,
   dropLng,
-  onCancel, 
-  onSOS 
+  onCancel,
+  onSOS
 }: ActiveRideCardProps) => {
   const { toast } = useToast();
-  const [showOTPSheet, setShowOTPSheet] = useState(false);
-  
+
   // Track captain's real-time location
   const { captainLocation } = useCaptainTracking({
     captainId: captain?.id || '',
@@ -122,16 +120,6 @@ const ActiveRideCard = ({
     }
   };
 
-  const handleOTPVerified = () => {
-    toast({ 
-      title: 'Ride Started!', 
-      description: 'Have a safe journey.' 
-    });
-  };
-
-  // Show OTP verification button when captain is waiting
-  const showOTPVerification = status === 'waiting_for_rider' && otp;
-
   return (
     <>
       <div className="bg-card rounded-2xl shadow-lg border border-border overflow-hidden">
@@ -175,30 +163,17 @@ const ActiveRideCard = ({
           </div>
         )}
 
-        {/* OTP Verification Banner - Show when captain is waiting */}
-        {showOTPVerification && (
-          <div className="bg-primary/10 border-b border-primary/20 px-4 py-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <KeyRound className="w-5 h-5 text-primary" />
-                <div>
-                  <p className="font-medium text-sm">Captain has arrived!</p>
-                  <p className="text-xs text-muted-foreground">Verify OTP to start your ride</p>
-                </div>
-              </div>
-              <Button size="sm" onClick={() => setShowOTPSheet(true)}>
-                Enter OTP
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* OTP Display - Only show when not in waiting_for_rider status */}
-        {otp && status !== 'in_progress' && status !== 'waiting_for_rider' && (
-          <div className="px-4 py-3 bg-primary/10 border-b border-border">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Share OTP with captain</span>
-              <span className="text-2xl font-bold tracking-wider">{otp}</span>
+        {/* OTP Display - Always visible for rider to share with captain */}
+        {otp && status !== 'in_progress' && status !== 'completed' && (
+          <div className="px-4 py-4 bg-gradient-to-br from-primary/20 to-primary/5 border-y border-primary/20">
+            <div className="text-center">
+              <p className="text-sm font-medium text-muted-foreground mb-2">Your Ride OTP</p>
+              <p className="text-4xl font-bold tracking-[0.5em] mb-2">{otp}</p>
+              <p className="text-xs text-muted-foreground">
+                {status === 'waiting_for_rider'
+                  ? 'Share this code with your captain now'
+                  : 'Share this code with your captain at pickup'}
+              </p>
             </div>
           </div>
         )}
@@ -272,18 +247,6 @@ const ActiveRideCard = ({
           </Button>
         </div>
       </div>
-
-      {/* OTP Verification Sheet */}
-      {otp && (
-        <OTPVerificationSheet
-          isOpen={showOTPSheet}
-          onClose={() => setShowOTPSheet(false)}
-          rideId={rideId}
-          expectedOTP={otp}
-          captainName={captain?.name}
-          onVerified={handleOTPVerified}
-        />
-      )}
     </>
   );
 };

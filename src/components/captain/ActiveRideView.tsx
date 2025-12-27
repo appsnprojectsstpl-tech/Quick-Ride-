@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Phone, Navigation, AlertTriangle, Volume2, VolumeX, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   Dialog,
@@ -16,6 +15,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useDirections } from '@/hooks/useDirections';
 import { useVoiceNavigation } from '@/hooks/useVoiceNavigation';
 import NavigationInstructions from './NavigationInstructions';
+import { OTPVerificationDialog } from './OTPVerificationDialog';
 
 interface Rider {
   name: string;
@@ -80,11 +80,11 @@ const ActiveRideView = ({
   const [selectedCancelReason, setSelectedCancelReason] = useState<string | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
   const { toast } = useToast();
-  const { routeInfo, fetchDirections, lastUpdated } = useDirections({ 
+  const { routeInfo, fetchDirections, lastUpdated } = useDirections({
     autoRefreshInterval: 30000,
-    enabled: true 
+    enabled: true
   });
-  
+
   const {
     voiceEnabled,
     toggleVoice,
@@ -93,7 +93,7 @@ const ActiveRideView = ({
     announceRideInProgress,
     announceArrival,
   } = useVoiceNavigation({ enabled: true });
-  
+
   const lastAnnouncedStepRef = useRef<string>('');
   const lastStatusRef = useRef<string>(status);
 
@@ -101,7 +101,7 @@ const ActiveRideView = ({
 
   // Determine navigation destination based on status
   const isGoingToPickup = status === 'matched' || status === 'captain_arriving' || status === 'waiting_for_rider';
-  const destination = isGoingToPickup 
+  const destination = isGoingToPickup
     ? { lat: pickupLat, lng: pickupLng, address: pickupAddress }
     : { lat: dropLat, lng: dropLng, address: dropAddress };
 
@@ -126,7 +126,7 @@ const ActiveRideView = ({
   // Voice announcements for navigation steps
   useEffect(() => {
     if (!routeInfo?.steps?.length || !voiceEnabled) return;
-    
+
     const currentInstruction = routeInfo.steps[0];
     if (currentInstruction && currentInstruction.instruction !== lastAnnouncedStepRef.current) {
       announceStep(currentInstruction);
@@ -137,7 +137,7 @@ const ActiveRideView = ({
   // Voice announcements for status changes
   useEffect(() => {
     if (status === lastStatusRef.current) return;
-    
+
     if (status === 'waiting_for_rider' && lastStatusRef.current !== 'waiting_for_rider') {
       announcePickupArrival();
     } else if (status === 'in_progress' && lastStatusRef.current !== 'in_progress') {
@@ -145,7 +145,7 @@ const ActiveRideView = ({
     } else if (status === 'completed') {
       announceArrival('destination');
     }
-    
+
     lastStatusRef.current = status;
   }, [status, dropAddress, announcePickupArrival, announceRideInProgress, announceArrival]);
 
@@ -213,7 +213,7 @@ const ActiveRideView = ({
 
   const handleCancelWithReason = async () => {
     if (!selectedCancelReason || !onCancelRide) return;
-    
+
     setIsCancelling(true);
     try {
       await onCancelRide(selectedCancelReason);
@@ -226,193 +226,193 @@ const ActiveRideView = ({
 
   return (
     <>
-    {/* Cancel Ride Dialog */}
-    <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5 text-destructive" />
-            Cancel Ride
-          </DialogTitle>
-          <DialogDescription>
-            Cancelling affects your acceptance rate. Please select a reason.
-          </DialogDescription>
-        </DialogHeader>
-        
-        <div className="grid grid-cols-1 gap-2 py-4">
-          {CANCEL_REASONS.map((reason) => (
+      {/* Cancel Ride Dialog */}
+      <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-destructive" />
+              Cancel Ride
+            </DialogTitle>
+            <DialogDescription>
+              Cancelling affects your acceptance rate. Please select a reason.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 gap-2 py-4">
+            {CANCEL_REASONS.map((reason) => (
+              <Button
+                key={reason.id}
+                variant={selectedCancelReason === reason.label ? 'default' : 'outline'}
+                className="justify-start"
+                onClick={() => setSelectedCancelReason(reason.label)}
+              >
+                {reason.label}
+              </Button>
+            ))}
+          </div>
+
+          <DialogFooter className="flex gap-2 sm:gap-0">
             <Button
-              key={reason.id}
-              variant={selectedCancelReason === reason.label ? 'default' : 'outline'}
-              className="justify-start"
-              onClick={() => setSelectedCancelReason(reason.label)}
+              variant="outline"
+              onClick={() => setShowCancelDialog(false)}
+              className="flex-1"
             >
-              {reason.label}
+              Keep Ride
             </Button>
-          ))}
-        </div>
-
-        <DialogFooter className="flex gap-2 sm:gap-0">
-          <Button 
-            variant="outline" 
-            onClick={() => setShowCancelDialog(false)}
-            className="flex-1"
-          >
-            Keep Ride
-          </Button>
-          <Button 
-            variant="destructive" 
-            onClick={handleCancelWithReason}
-            disabled={!selectedCancelReason || isCancelling}
-            className="flex-1"
-          >
-            {isCancelling ? 'Cancelling...' : 'Confirm Cancel'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-    <div className="bg-card rounded-2xl shadow-lg border border-border overflow-hidden">
-      {/* Navigation Instructions */}
-      {routeInfo && routeInfo.steps.length > 0 && (
-        <div className="mb-2">
-          <NavigationInstructions
-            steps={routeInfo.steps}
-            totalDistance={routeInfo.distance.text}
-            totalDuration={routeInfo.duration.text}
-            durationInTraffic={routeInfo.durationInTraffic?.text}
-            eta={routeInfo.eta}
-            destination={isGoingToPickup ? 'Pickup' : 'Drop-off'}
-            lastUpdated={lastUpdated}
-          />
-        </div>
-      )}
-
-      {/* Status Header */}
-      <div className="px-4 py-3 bg-primary text-primary-foreground flex items-center justify-between">
-        <p className="font-semibold">
-          {status === 'matched' && 'Navigate to Pickup'}
-          {status === 'captain_arriving' && 'Going to Pickup'}
-          {status === 'waiting_for_rider' && 'Waiting for Rider'}
-          {status === 'in_progress' && 'Ride in Progress'}
-        </p>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={toggleVoice}
-          className="text-primary-foreground hover:bg-primary-foreground/20"
-        >
-          {voiceEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
-        </Button>
-      </div>
-
-      {/* Rider Info */}
-      {rider && (
-        <div className="p-4 border-b border-border">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Avatar className="w-12 h-12">
-                <AvatarImage src={rider.avatar_url || undefined} />
-                <AvatarFallback className="bg-secondary text-secondary-foreground">
-                  {rider.name?.charAt(0) || 'R'}
-                </AvatarFallback>
-              </Avatar>
-              <div>
-                <p className="font-semibold">{rider.name}</p>
-                <p className="text-sm text-muted-foreground">Rider</p>
-              </div>
-            </div>
-            <Button variant="outline" size="icon" onClick={handleCall}>
-              <Phone className="w-4 h-4" />
+            <Button
+              variant="destructive"
+              onClick={handleCancelWithReason}
+              disabled={!selectedCancelReason || isCancelling}
+              className="flex-1"
+            >
+              {isCancelling ? 'Cancelling...' : 'Confirm Cancel'}
             </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Route */}
-      <div className="p-4 space-y-3">
-        <button
-          onClick={() => openNavigation(pickupAddress)}
-          className="w-full flex items-start gap-3 p-3 bg-muted/50 rounded-lg hover:bg-muted transition-colors"
-        >
-          <div className="w-3 h-3 rounded-full bg-success mt-1" />
-          <div className="flex-1 text-left">
-            <p className="text-xs text-muted-foreground">Pickup</p>
-            <p className="text-sm font-medium">{pickupAddress}</p>
-          </div>
-          <Navigation className="w-5 h-5 text-primary" />
-        </button>
-
-        <button
-          onClick={() => openNavigation(dropAddress)}
-          className="w-full flex items-start gap-3 p-3 bg-muted/50 rounded-lg hover:bg-muted transition-colors"
-        >
-          <div className="w-3 h-3 rounded-full bg-destructive mt-1" />
-          <div className="flex-1 text-left">
-            <p className="text-xs text-muted-foreground">Drop</p>
-            <p className="text-sm font-medium">{dropAddress}</p>
-          </div>
-          <Navigation className="w-5 h-5 text-primary" />
-        </button>
-      </div>
-
-      {/* OTP Entry (when waiting for rider) */}
-      {status === 'waiting_for_rider' && (
-        <div className="px-4 pb-4">
-          <div className="bg-warning/10 border border-warning/30 rounded-lg p-4">
-            <p className="text-sm font-medium mb-2">Enter OTP from rider to start</p>
-            <Input
-              value={enteredOtp}
-              onChange={(e) => setEnteredOtp(e.target.value)}
-              placeholder="Enter 4-digit OTP"
-              maxLength={4}
-              className="text-center text-2xl tracking-widest font-bold"
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <div className="bg-card rounded-2xl shadow-lg border border-border overflow-hidden">
+        {/* Navigation Instructions */}
+        {routeInfo && routeInfo.steps.length > 0 && (
+          <div className="mb-2">
+            <NavigationInstructions
+              steps={routeInfo.steps}
+              totalDistance={routeInfo.distance.text}
+              totalDuration={routeInfo.duration.text}
+              durationInTraffic={routeInfo.durationInTraffic?.text}
+              eta={routeInfo.eta}
+              destination={isGoingToPickup ? 'Pickup' : 'Drop-off'}
+              lastUpdated={lastUpdated}
             />
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Fare */}
-      <div className="px-4 pb-4">
-        <div className="flex items-center justify-between bg-muted/50 rounded-lg p-3">
-          <span className="text-muted-foreground">Ride Fare</span>
-          <span className="text-xl font-bold">₹{fare}</span>
-        </div>
-      </div>
-
-      {/* Action Button */}
-      {currentStep && (
-        <div className="p-4 border-t border-border">
+        {/* Status Header */}
+        <div className="px-4 py-3 bg-primary text-primary-foreground flex items-center justify-between">
+          <p className="font-semibold">
+            {status === 'matched' && 'Navigate to Pickup'}
+            {status === 'captain_arriving' && 'Going to Pickup'}
+            {status === 'waiting_for_rider' && 'Waiting for Rider'}
+            {status === 'in_progress' && 'Ride in Progress'}
+          </p>
           <Button
-            onClick={handleUpdateStatus}
-            disabled={isUpdating}
-            className="w-full h-14 text-lg font-bold"
+            variant="ghost"
+            size="icon"
+            onClick={toggleVoice}
+            className="text-primary-foreground hover:bg-primary-foreground/20"
           >
-            {isUpdating ? 'Updating...' : currentStep.label}
+            {voiceEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
           </Button>
         </div>
-      )}
 
-      {/* Bottom Actions */}
-      <div className="px-4 pb-4 flex gap-2">
-        {status !== 'in_progress' && onCancelRide && (
+        {/* Rider Info */}
+        {rider && (
+          <div className="p-4 border-b border-border">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Avatar className="w-12 h-12">
+                  <AvatarImage src={rider.avatar_url || undefined} />
+                  <AvatarFallback className="bg-secondary text-secondary-foreground">
+                    {rider.name?.charAt(0) || 'R'}
+                  </AvatarFallback>
+                </Avatar>
+                <div>
+                  <p className="font-semibold">{rider.name}</p>
+                  <p className="text-sm text-muted-foreground">Rider</p>
+                </div>
+              </div>
+              <Button variant="outline" size="icon" onClick={handleCall}>
+                <Phone className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Route */}
+        <div className="p-4 space-y-3">
+          <button
+            onClick={() => openNavigation(pickupAddress)}
+            className="w-full flex items-start gap-3 p-3 bg-muted/50 rounded-lg hover:bg-muted transition-colors"
+          >
+            <div className="w-3 h-3 rounded-full bg-success mt-1" />
+            <div className="flex-1 text-left">
+              <p className="text-xs text-muted-foreground">Pickup</p>
+              <p className="text-sm font-medium">{pickupAddress}</p>
+            </div>
+            <Navigation className="w-5 h-5 text-primary" />
+          </button>
+
+          <button
+            onClick={() => openNavigation(dropAddress)}
+            className="w-full flex items-start gap-3 p-3 bg-muted/50 rounded-lg hover:bg-muted transition-colors"
+          >
+            <div className="w-3 h-3 rounded-full bg-destructive mt-1" />
+            <div className="flex-1 text-left">
+              <p className="text-xs text-muted-foreground">Drop</p>
+              <p className="text-sm font-medium">{dropAddress}</p>
+            </div>
+            <Navigation className="w-5 h-5 text-primary" />
+          </button>
+        </div>
+
+        {/* OTP Entry (when waiting for rider) */}
+        {status === 'waiting_for_rider' && (
+          <div className="px-4 pb-4">
+            <div className="bg-warning/10 border border-warning/30 rounded-lg p-4">
+              <p className="text-sm font-medium mb-2">Enter OTP from rider to start</p>
+              <Input
+                value={enteredOtp}
+                onChange={(e) => setEnteredOtp(e.target.value)}
+                placeholder="Enter 4-digit OTP"
+                maxLength={4}
+                className="text-center text-2xl tracking-widest font-bold"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Fare */}
+        <div className="px-4 pb-4">
+          <div className="flex items-center justify-between bg-muted/50 rounded-lg p-3">
+            <span className="text-muted-foreground">Ride Fare</span>
+            <span className="text-xl font-bold">₹{fare}</span>
+          </div>
+        </div>
+
+        {/* Action Button */}
+        {currentStep && (
+          <div className="p-4 border-t border-border">
+            <Button
+              onClick={handleUpdateStatus}
+              disabled={isUpdating}
+              className="w-full h-14 text-lg font-bold"
+            >
+              {isUpdating ? 'Updating...' : currentStep.label}
+            </Button>
+          </div>
+        )}
+
+        {/* Bottom Actions */}
+        <div className="px-4 pb-4 flex gap-2">
+          {status !== 'in_progress' && onCancelRide && (
+            <Button
+              variant="outline"
+              className="flex-1 text-destructive hover:text-destructive hover:bg-destructive/10"
+              onClick={() => setShowCancelDialog(true)}
+            >
+              <X className="w-4 h-4 mr-2" />
+              Cancel Ride
+            </Button>
+          )}
           <Button
             variant="outline"
-            className="flex-1 text-destructive hover:text-destructive hover:bg-destructive/10"
-            onClick={() => setShowCancelDialog(true)}
+            className="flex-1 sos-button"
           >
-            <X className="w-4 h-4 mr-2" />
-            Cancel Ride
+            <AlertTriangle className="w-4 h-4 mr-2" />
+            SOS
           </Button>
-        )}
-        <Button
-          variant="outline"
-          className="flex-1 sos-button"
-        >
-          <AlertTriangle className="w-4 h-4 mr-2" />
-          SOS
-        </Button>
+        </div>
       </div>
-    </div>
     </>
   );
 };

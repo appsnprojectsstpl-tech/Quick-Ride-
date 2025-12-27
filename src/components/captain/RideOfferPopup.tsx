@@ -54,33 +54,33 @@ const RideOfferPopup = ({ offer, captainId, onAccepted, onDeclined }: RideOfferP
       const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
-      
+
       oscillator.connect(gainNode);
       gainNode.connect(audioContext.destination);
-      
+
       oscillator.frequency.value = 800;
       oscillator.type = 'sine';
       gainNode.gain.value = 0.3;
-      
+
       oscillator.start();
       setTimeout(() => {
         oscillator.stop();
         audioContext.close();
       }, 200);
-      
+
       // Play again after 500ms
       setTimeout(() => {
         const audioContext2 = new (window.AudioContext || (window as any).webkitAudioContext)();
         const oscillator2 = audioContext2.createOscillator();
         const gainNode2 = audioContext2.createGain();
-        
+
         oscillator2.connect(gainNode2);
         gainNode2.connect(audioContext2.destination);
-        
+
         oscillator2.frequency.value = 1000;
         oscillator2.type = 'sine';
         gainNode2.gain.value = 0.3;
-        
+
         oscillator2.start();
         setTimeout(() => {
           oscillator2.stop();
@@ -95,12 +95,12 @@ const RideOfferPopup = ({ offer, captainId, onAccepted, onDeclined }: RideOfferP
   // Countdown timer
   useEffect(() => {
     const expiresAt = new Date(offer.expires_at).getTime();
-    
+
     const interval = setInterval(() => {
       const now = Date.now();
       const remaining = Math.max(0, Math.ceil((expiresAt - now) / 1000));
       setTimeRemaining(remaining);
-      
+
       if (remaining <= 0) {
         clearInterval(interval);
         onDeclined();
@@ -113,16 +113,20 @@ const RideOfferPopup = ({ offer, captainId, onAccepted, onDeclined }: RideOfferP
   const handleAccept = async () => {
     setIsResponding(true);
     try {
-      const { data, error } = await supabase.functions.invoke('respond-to-offer', {
-        body: {
+      const res = await fetch('http://localhost:3001/api/respond-to-offer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           offer_id: offer.id,
           captain_id: captainId,
           response: 'accept',
-        },
+        })
       });
+      const data = await res.json();
+      const error = !res.ok ? data : null;
 
       if (error) throw error;
-      
+
       if (data?.success) {
         onAccepted(data.ride);
       } else {
@@ -140,13 +144,15 @@ const RideOfferPopup = ({ offer, captainId, onAccepted, onDeclined }: RideOfferP
   const handleDecline = async (reason: string) => {
     setIsResponding(true);
     try {
-      await supabase.functions.invoke('respond-to-offer', {
-        body: {
+      await fetch('http://localhost:3001/api/respond-to-offer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           offer_id: offer.id,
           captain_id: captainId,
           response: 'decline',
           decline_reason: reason,
-        },
+        })
       });
     } catch (error) {
       console.error('Error declining offer:', error);
@@ -172,9 +178,8 @@ const RideOfferPopup = ({ offer, captainId, onAccepted, onDeclined }: RideOfferP
           <motion.div
             initial={{ width: '100%' }}
             animate={{ width: `${timerPercentage}%` }}
-            className={`h-full transition-all ${
-              timeRemaining <= 5 ? 'bg-destructive' : 'bg-primary'
-            }`}
+            className={`h-full transition-all ${timeRemaining <= 5 ? 'bg-destructive' : 'bg-primary'
+              }`}
           />
         </div>
 
@@ -182,9 +187,8 @@ const RideOfferPopup = ({ offer, captainId, onAccepted, onDeclined }: RideOfferP
         <div className="p-4 bg-primary/10 border-b border-border">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold ${
-                timeRemaining <= 5 ? 'bg-destructive text-destructive-foreground' : 'bg-primary text-primary-foreground'
-              }`}>
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold ${timeRemaining <= 5 ? 'bg-destructive text-destructive-foreground' : 'bg-primary text-primary-foreground'
+                }`}>
                 {timeRemaining}
               </div>
               <div>

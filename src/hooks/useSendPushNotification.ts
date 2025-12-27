@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
-export type NotificationType = 
+export type NotificationType =
   | 'ride_request'
   | 'ride_accepted'
   | 'captain_arriving'
@@ -96,8 +96,10 @@ export const useSendPushNotification = () => {
     const { title, body } = getNotificationContent(type, data);
 
     try {
-      const response = await supabase.functions.invoke('send-notification', {
-        body: {
+      const response = await fetch('http://localhost:3001/api/send-notification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           user_ids: userIds,
           title,
           body,
@@ -107,16 +109,18 @@ export const useSendPushNotification = () => {
             ...data,
           },
           priority: type === 'ride_request' || type === 'sos_alert' ? 'high' : 'normal',
-        },
+        })
       });
 
-      if (response.error) {
-        console.error('[useSendPushNotification] Error:', response.error);
-        return { success: false, error: response.error.message };
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('[useSendPushNotification] Error:', errorData);
+        return { success: false, error: errorData.error || 'Request failed' };
       }
 
-      console.log('[useSendPushNotification] Success:', response.data);
-      return { success: true, data: response.data };
+      const responseData = await response.json();
+      console.log('[useSendPushNotification] Success:', responseData);
+      return { success: true, data: responseData };
     } catch (error) {
       console.error('[useSendPushNotification] Exception:', error);
       return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };

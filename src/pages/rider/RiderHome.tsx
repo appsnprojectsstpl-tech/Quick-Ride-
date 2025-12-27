@@ -56,7 +56,7 @@ const RiderHome = () => {
   const [completedCaptainName, setCompletedCaptainName] = useState<string | undefined>(undefined);
   const [showVehicleOptions, setShowVehicleOptions] = useState(false);
   const [showConfirmRide, setShowConfirmRide] = useState(false);
-  
+
   const { user, profile } = useAuth();
   const { toast } = useToast();
   const { routeInfo, fetchDirections, clearRoute } = useDirections();
@@ -85,23 +85,25 @@ const RiderHome = () => {
   });
 
   // Track captain location during active ride
-  const shouldTrackCaptain = activeRide?.status && 
+  const shouldTrackCaptain = activeRide?.status &&
     ['matched', 'captain_arriving', 'waiting_for_rider', 'in_progress'].includes(activeRide.status);
-  
+
   const { captainLocation, isTracking } = useCaptainTracking({
     captainId: activeRide?.captainId || null,
     enabled: !!shouldTrackCaptain,
   });
 
+
   // Fetch nearby captains when not in active ride
   const isSearching = state.status === 'SEARCHING_CAPTAIN';
   const hasActiveRide = activeRide && ['matched', 'captain_arriving', 'waiting_for_rider', 'in_progress'].includes(activeRide.status);
-  const showNearbyCaptains = !isSearching && !hasActiveRide;
+  const showNearbyCaptains = !isSearching && !hasActiveRide; // Show during vehicle selection too
 
   const { nearbyCaptains } = useNearbyCaptains({
     lat: currentLocation.lat,
     lng: currentLocation.lng,
     radiusKm: 5,
+    vehicleType: state.vehicleType, // Filter by selected vehicle type
     enabled: showNearbyCaptains,
   });
 
@@ -229,7 +231,7 @@ const RiderHome = () => {
         },
         async (payload) => {
           const updatedRide = payload.new as any;
-          
+
           // Auto-retry matching when ride goes back to pending after captain decline/cancel
           if (updatedRide?.status === 'pending' && updatedRide?.excluded_captain_ids?.length > 0) {
             console.log('[RiderHome] Ride reset to pending, auto-triggering re-match...');
@@ -237,9 +239,11 @@ const RiderHome = () => {
               title: 'Finding another captain...',
               description: 'Previous captain unavailable. Searching for a new one.',
             });
-            
-            const { error } = await supabase.functions.invoke('match-captain-v2', {
-              body: {
+
+            const res = await fetch('http://localhost:3001/api/match-captain-v2', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
                 ride_id: updatedRide.id,
                 pickup_lat: updatedRide.pickup_lat,
                 pickup_lng: updatedRide.pickup_lng,
@@ -247,14 +251,15 @@ const RiderHome = () => {
                 estimated_fare: updatedRide.final_fare,
                 estimated_distance_km: updatedRide.estimated_distance_km,
                 estimated_duration_mins: updatedRide.estimated_duration_mins,
-              },
+              })
             });
-            
+            const error = !res.ok ? await res.json() : null;
+
             if (error) {
               console.error('[RiderHome] Re-match error:', error);
             }
           }
-          
+
           fetchActiveRide();
         }
       )
@@ -268,10 +273,12 @@ const RiderHome = () => {
   const handleRideBooked = async (rideId: string) => {
     dispatch({ type: 'SET_RIDE_ID', payload: rideId });
     dispatch({ type: 'SET_STATUS', payload: 'SEARCHING_CAPTAIN' });
-    
+
     // Start captain matching
-    const { data, error } = await supabase.functions.invoke('match-captain-v2', {
-      body: {
+    const res = await fetch('http://localhost:3001/api/match-captain-v2', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
         ride_id: rideId,
         pickup_lat: state.pickupLocation?.lat,
         pickup_lng: state.pickupLocation?.lng,
@@ -279,8 +286,10 @@ const RiderHome = () => {
         estimated_fare: state.fare?.final_fare || 50,
         estimated_distance_km: state.fare?.distance_km || 5,
         estimated_duration_mins: state.fare?.duration_mins || 15,
-      },
+      })
     });
+    const data = await res.json();
+    const error = !res.ok ? data : null;
 
     if (error) {
       console.error('Matching error:', error);
@@ -314,14 +323,17 @@ const RiderHome = () => {
   const handleCancelSearch = async () => {
     if (state.rideId) {
       try {
-        const { error } = await supabase.functions.invoke('handle-cancellation', {
-          body: {
+        const res = await fetch('http://localhost:3001/api/handle-cancellation', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
             ride_id: state.rideId,
             cancelled_by: 'rider',
             user_id: user?.id,
             reason: 'Cancelled during search',
-          },
+          })
         });
+        const error = !res.ok ? await res.json() : null;
 
         if (error) throw error;
       } catch (error) {
@@ -336,14 +348,18 @@ const RiderHome = () => {
     if (!activeRide) return;
 
     try {
-      const { data, error } = await supabase.functions.invoke('handle-cancellation', {
-        body: {
+      const res = await fetch('http://localhost:3001/api/handle-cancellation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           ride_id: activeRide.id,
           cancelled_by: 'rider',
           user_id: user?.id,
           reason: 'Cancelled by rider',
-        },
+        })
       });
+      const data = await res.json();
+      const error = !res.ok ? data : null;
 
       if (error) throw error;
 
@@ -352,9 +368,9 @@ const RiderHome = () => {
       dispatch({ type: 'RESET' });
 
       if (data?.cancellation_fee > 0) {
-        toast({ 
-          title: 'Ride cancelled', 
-          description: `Cancellation fee: ₹${data.cancellation_fee}` 
+        toast({
+          title: 'Ride cancelled',
+          description: `Cancellation fee: ₹${data.cancellation_fee}`
         });
       } else {
         toast({ title: 'Ride cancelled' });
@@ -392,21 +408,21 @@ const RiderHome = () => {
   // Build map markers with captain location and nearby captains
   const mapMarkers = useMemo(() => {
     const markers = [];
-    
+
     if (activeRide) {
-      markers.push({ 
-        lat: activeRide.pickup.lat, 
-        lng: activeRide.pickup.lng, 
-        title: 'Pickup', 
-        icon: 'pickup' as const 
+      markers.push({
+        lat: activeRide.pickup.lat,
+        lng: activeRide.pickup.lng,
+        title: 'Pickup',
+        icon: 'pickup' as const
       });
-      markers.push({ 
-        lat: activeRide.drop.lat, 
-        lng: activeRide.drop.lng, 
-        title: 'Drop-off', 
-        icon: 'drop' as const 
+      markers.push({
+        lat: activeRide.drop.lat,
+        lng: activeRide.drop.lng,
+        title: 'Drop-off',
+        icon: 'drop' as const
       });
-      
+
       if (captainLocation && shouldTrackCaptain) {
         markers.push({
           lat: captainLocation.lat,
@@ -417,19 +433,19 @@ const RiderHome = () => {
       }
     } else {
       if (state.pickupLocation) {
-        markers.push({ 
-          lat: state.pickupLocation.lat, 
-          lng: state.pickupLocation.lng, 
-          title: 'Pickup', 
-          icon: 'pickup' as const 
+        markers.push({
+          lat: state.pickupLocation.lat,
+          lng: state.pickupLocation.lng,
+          title: 'Pickup',
+          icon: 'pickup' as const
         });
       }
       if (state.dropLocation) {
-        markers.push({ 
-          lat: state.dropLocation.lat, 
-          lng: state.dropLocation.lng, 
-          title: 'Drop', 
-          icon: 'drop' as const 
+        markers.push({
+          lat: state.dropLocation.lat,
+          lng: state.dropLocation.lng,
+          title: 'Drop',
+          icon: 'drop' as const
         });
       }
 
@@ -445,7 +461,7 @@ const RiderHome = () => {
         });
       }
     }
-    
+
     return markers;
   }, [activeRide, state.pickupLocation, state.dropLocation, captainLocation, shouldTrackCaptain, showNearbyCaptains, nearbyCaptains]);
 

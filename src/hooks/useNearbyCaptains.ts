@@ -14,6 +14,7 @@ interface UseNearbyCaptainsOptions {
   lat: number | null;
   lng: number | null;
   radiusKm?: number;
+  vehicleType?: 'bike' | 'auto' | 'cab' | null;
   enabled?: boolean;
   pollIntervalMs?: number;
 }
@@ -22,6 +23,7 @@ export const useNearbyCaptains = ({
   lat,
   lng,
   radiusKm = 3,
+  vehicleType = null,
   enabled = true,
   pollIntervalMs = 10000,
 }: UseNearbyCaptainsOptions) => {
@@ -42,20 +44,31 @@ export const useNearbyCaptains = ({
     setError(null);
 
     try {
-      const { data, error: fetchError } = await supabase.functions.invoke('get-nearby-captains', {
-        body: { lat, lng, radius_km: radiusKm },
+      const res = await fetch('http://localhost:3001/api/get-nearby-captains', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lat, lng, radius_km: radiusKm })
       });
+      const data = await res.json();
+      const fetchError = !res.ok ? data : null;
 
       if (fetchError) throw fetchError;
 
-      setNearbyCaptains(data?.captains || []);
+      let captains = data?.captains || [];
+
+      // Filter by vehicle type if specified
+      if (vehicleType) {
+        captains = captains.filter((c: NearbyCaptain) => c.vehicle_type === vehicleType);
+      }
+
+      setNearbyCaptains(captains);
     } catch (err) {
       console.error('[useNearbyCaptains] Error:', err);
       setError('Failed to fetch nearby captains');
     } finally {
       setIsLoading(false);
     }
-  }, [lat, lng, radiusKm, enabled]);
+  }, [lat, lng, radiusKm, vehicleType, enabled]);
 
   // Initial fetch and polling
   useEffect(() => {

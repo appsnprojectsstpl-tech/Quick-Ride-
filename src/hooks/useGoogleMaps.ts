@@ -9,11 +9,17 @@ export const useGoogleMapsApiKey = () => {
   useEffect(() => {
     const fetchApiKey = async () => {
       try {
-        const { data, error } = await supabase.functions.invoke('get-maps-key');
-        
+        const res = await fetch('http://localhost:3001/api/get-maps-key', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+        const data = await res.json();
+        const error = !res.ok ? data : null;
+
         if (error) throw error;
         if (!data?.apiKey) throw new Error('No API key returned');
-        
+
         setApiKey(data.apiKey);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load maps');

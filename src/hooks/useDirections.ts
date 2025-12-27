@@ -102,21 +102,21 @@ const getDistanceInMeters = (
   const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos((point1.lat * Math.PI) / 180) *
-      Math.cos((point2.lat * Math.PI) / 180) *
-      Math.sin(dLng / 2) *
-      Math.sin(dLng / 2);
+    Math.cos((point2.lat * Math.PI) / 180) *
+    Math.sin(dLng / 2) *
+    Math.sin(dLng / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 };
 
 export const useDirections = (options: UseDirectionsOptions = {}): UseDirectionsResult => {
   const { autoRefreshInterval = 30000, enabled = true } = options;
-  
+
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  
+
   const lastOriginRef = useRef<{ lat: number; lng: number } | null>(null);
   const lastDestinationRef = useRef<{ lat: number; lng: number } | null>(null);
   const refreshIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -129,14 +129,21 @@ export const useDirections = (options: UseDirectionsOptions = {}): UseDirections
       // Store for auto-refresh
       lastOriginRef.current = origin;
       lastDestinationRef.current = destination;
-      
+
       setIsLoading(true);
       setError(null);
 
       try {
-        const { data, error: fnError } = await supabase.functions.invoke('get-directions', {
-          body: { origin, destination },
+        const res = await fetch('http://localhost:3001/api/get-directions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            origin: { lat: origin.lat, lng: origin.lng },
+            destination: { lat: destination.lat, lng: destination.lng }
+          })
         });
+        const data = await res.json();
+        const fnError = !res.ok ? data : null;
 
         if (fnError) {
           throw new Error(fnError.message);
@@ -167,7 +174,7 @@ export const useDirections = (options: UseDirectionsOptions = {}): UseDirections
           decodedPath,
           steps,
         });
-        
+
         setLastUpdated(new Date());
       } catch (err: unknown) {
         const errorMessage = err instanceof Error ? err.message : 'Failed to fetch directions';
@@ -211,7 +218,7 @@ export const useDirections = (options: UseDirectionsOptions = {}): UseDirections
     setLastUpdated(null);
     lastOriginRef.current = null;
     lastDestinationRef.current = null;
-    
+
     if (refreshIntervalRef.current) {
       clearInterval(refreshIntervalRef.current);
     }

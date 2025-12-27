@@ -72,7 +72,7 @@ const CaptainHome = ({ captain }: CaptainHomeProps) => {
         .select('*')
         .eq('captain_id', captain.id)
         .single();
-      
+
       if (data) {
         setCaptainMetrics(data);
       }
@@ -221,7 +221,7 @@ const CaptainHome = ({ captain }: CaptainHomeProps) => {
     clearOffer();
     setActiveRide(rideDetails);
     toast({ title: 'Ride accepted!', description: 'Navigate to pickup location.' });
-    
+
     // Fetch rider info
     if (rideDetails?.rider_id) {
       supabase
@@ -261,15 +261,19 @@ const CaptainHome = ({ captain }: CaptainHomeProps) => {
     if (!activeRide) return;
 
     try {
-      const { data, error } = await supabase.functions.invoke('handle-cancellation', {
-        body: {
+      const res = await fetch('http://localhost:3001/api/handle-cancellation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           ride_id: activeRide.id,
           cancelled_by: 'captain',
           user_id: captain?.user_id,
           captain_id: captain?.id,
           reason,
-        },
+        })
       });
+      const data = await res.json();
+      const error = !res.ok ? data : null;
 
       if (error) throw error;
 
@@ -325,7 +329,7 @@ const CaptainHome = ({ captain }: CaptainHomeProps) => {
             Hello, {profile?.name?.split(' ')[0] || 'Captain'} 👋
           </h1>
         </div>
-        
+
         {/* Online Toggle */}
         <div className="flex items-center gap-2">
           <span className={`text-xs font-medium ${isOnline ? 'text-success' : 'text-muted-foreground'}`}>

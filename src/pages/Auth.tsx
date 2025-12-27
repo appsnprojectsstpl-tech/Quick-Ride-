@@ -32,7 +32,7 @@ const Auth = () => {
           password,
         });
         if (error) throw error;
-        
+
         // Route based on user type (would check roles in real app)
         navigate(userType === "admin" ? "/admin" : userType === "captain" ? "/captain" : "/rider");
       } else {
@@ -46,20 +46,54 @@ const Auth = () => {
         });
         if (error) throw error;
 
-        // Create role for user
+        // Create profile and role for user
         if (data.user) {
+          // Create profile first
+          const { error: profileError } = await supabase.from("profiles").insert({
+            user_id: data.user.id,
+            name,
+            phone,
+            email,
+          });
+          if (profileError) {
+            console.error("Profile creation error:", profileError);
+            toast({
+              variant: "destructive",
+              title: "Profile creation failed",
+              description: profileError.message,
+            });
+          }
+
+          // Create role
           const { error: roleError } = await supabase.from("user_roles").insert({
             user_id: data.user.id,
             role: userType,
           });
-          if (roleError) console.error("Role creation error:", roleError);
-          
+          if (roleError) {
+            console.error("Role creation error:", roleError);
+            toast({
+              variant: "destructive",
+              title: "Role creation failed",
+              description: roleError.message,
+            });
+          }
+
           // Create captain record if signing up as captain
           if (userType === "captain") {
             const { error: captainError } = await supabase.from("captains").insert({
               user_id: data.user.id,
+              status: 'offline',
+              kyc_status: 'pending',
+              is_verified: false,
             });
-            if (captainError) console.error("Captain creation error:", captainError);
+            if (captainError) {
+              console.error("Captain creation error:", captainError);
+              toast({
+                variant: "destructive",
+                title: "Captain account creation failed",
+                description: captainError.message,
+              });
+            }
           }
         }
 
@@ -105,11 +139,10 @@ const Auth = () => {
               <button
                 key={type.id}
                 onClick={() => setUserType(type.id)}
-                className={`flex-1 flex flex-col items-center gap-1 p-3 rounded-xl transition-all border-2 ${
-                  userType === type.id
+                className={`flex-1 flex flex-col items-center gap-1 p-3 rounded-xl transition-all border-2 ${userType === type.id
                     ? "bg-primary text-primary-foreground border-primary"
                     : "bg-card text-card-foreground border-border hover:border-primary/50"
-                }`}
+                  }`}
               >
                 <type.icon className="w-5 h-5" />
                 <span className="text-xs font-medium">{type.label}</span>

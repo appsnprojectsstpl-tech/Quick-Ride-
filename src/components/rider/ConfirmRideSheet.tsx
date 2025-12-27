@@ -26,7 +26,7 @@ const ConfirmRideSheet = ({ isOpen, onClose, onRideBooked }: ConfirmRideSheetPro
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
-  
+
   const [promoCode, setPromoCode] = useState('');
   const [isApplyingPromo, setIsApplyingPromo] = useState(false);
   const [promoError, setPromoError] = useState<string | null>(null);
@@ -37,21 +37,25 @@ const ConfirmRideSheet = ({ isOpen, onClose, onRideBooked }: ConfirmRideSheetPro
 
   const handleApplyPromo = async () => {
     if (!promoCode.trim() || !state.pickupLocation || !state.dropLocation) return;
-    
+
     setIsApplyingPromo(true);
     setPromoError(null);
 
     try {
-      const { data, error } = await supabase.functions.invoke('calculate-fare', {
-        body: {
+      const res = await fetch('http://localhost:3001/api/calculate-fare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           pickup_lat: state.pickupLocation.lat,
           pickup_lng: state.pickupLocation.lng,
           drop_lat: state.dropLocation.lat,
           drop_lng: state.dropLocation.lng,
           vehicle_type: state.vehicleType,
           promo_code: promoCode,
-        },
+        })
       });
+      const data = await res.json();
+      const error = !res.ok ? data : null;
 
       if (error) throw error;
 
@@ -84,15 +88,18 @@ const ConfirmRideSheet = ({ isOpen, onClose, onRideBooked }: ConfirmRideSheetPro
 
     // Refetch fare without promo
     if (state.pickupLocation && state.dropLocation) {
-      const { data } = await supabase.functions.invoke('calculate-fare', {
-        body: {
+      const res = await fetch('http://localhost:3001/api/calculate-fare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           pickup_lat: state.pickupLocation.lat,
           pickup_lng: state.pickupLocation.lng,
           drop_lat: state.dropLocation.lat,
           drop_lng: state.dropLocation.lng,
           vehicle_type: state.vehicleType,
-        },
+        })
       });
+      const data = await res.json();
       if (data) {
         dispatch({ type: 'SET_FARE', payload: data });
       }

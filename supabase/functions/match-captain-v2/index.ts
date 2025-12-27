@@ -38,8 +38,8 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   const dLat = (lat2 - lat1) * Math.PI / 180
   const dLon = (lon2 - lon1) * Math.PI / 180
   const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLon / 2) * Math.sin(dLon / 2)
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2)
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
   return R * c
 }
@@ -58,7 +58,7 @@ function calculateCaptainScore(
   const cancellationScore = 1 - ((metrics?.cancellation_rate || 0) / 100)
 
   // Apply weights from config
-  const score = 
+  const score =
     etaScore * (config.score_weight_eta || 0.40) +
     acceptanceScore * (config.score_weight_acceptance || 0.25) +
     ratingScore * (config.score_weight_rating || 0.20) +
@@ -78,11 +78,11 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    const { 
-      ride_id, 
-      pickup_lat, 
-      pickup_lng, 
-      vehicle_type, 
+    const {
+      ride_id,
+      pickup_lat,
+      pickup_lng,
+      vehicle_type,
       city = 'default',
       estimated_fare = 0,
       estimated_distance_km = 0,
@@ -241,7 +241,7 @@ serve(async (req) => {
           .eq('id', ride_id)
 
         return new Response(
-          JSON.stringify({ 
+          JSON.stringify({
             matched: false,
             retry: true,
             message: 'No captains in range, expanding search radius',
@@ -253,7 +253,7 @@ serve(async (req) => {
       }
 
       return new Response(
-        JSON.stringify({ 
+        JSON.stringify({
           matched: false,
           retry: false,
           message: 'No captains available nearby. Please try again later.'
@@ -322,8 +322,8 @@ serve(async (req) => {
     // Update captain metrics - increment offers received
     await supabase
       .from('captain_metrics')
-      .update({ 
-        total_offers_received: (metricsMap.get(selectedCaptain.captain_id)?.total_offers_received || 0) + 1 
+      .update({
+        total_offers_received: (metricsMap.get(selectedCaptain.captain_id)?.total_offers_received || 0) + 1
       })
       .eq('captain_id', selectedCaptain.captain_id)
 
@@ -350,6 +350,40 @@ serve(async (req) => {
       .from('captains')
       .update({ status: 'on_ride' })
       .eq('id', selectedCaptain.captain_id)
+
+    // Get ride details for OTP notification
+    const { data: rideForOtp } = await supabase
+      .from('rides')
+      .select('rider_id, pickup_address')
+      .eq('id', ride_id)
+      .single()
+
+    // Send OTP to rider (reversed flow - rider shares with captain)
+    if (rideForOtp?.rider_id) {
+      try {
+        await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/send-notification`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+          },
+          body: JSON.stringify({
+            user_ids: [rideForOtp.rider_id],
+            title: '🔐 Your Ride OTP',
+            body: `Your verification code: ${otp}\nShare this with your captain at pickup`,
+            data: {
+              type: 'ride_otp',
+              ride_id,
+              otp,
+            },
+            priority: 'high'
+          }),
+        })
+        console.log('[match-captain-v2] OTP notification sent to rider')
+      } catch (otpError) {
+        console.error('[match-captain-v2] Failed to send OTP notification:', otpError)
+      }
+    }
 
     // Get captain profile for response
     const { data: profile } = await supabase
@@ -381,7 +415,7 @@ serve(async (req) => {
           distance_km: Math.round(selectedCaptain.distance_km * 10) / 10,
           score: selectedCaptain.score
         },
-        otp,
+        // OTP removed - now sent to rider, not captain
         expires_at: offerExpiresAt.toISOString(),
         other_candidates: topCandidates.slice(1).map(c => ({
           captain_id: c.captain_id,
